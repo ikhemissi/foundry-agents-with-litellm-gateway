@@ -1,0 +1,7 @@
+agent-framework-core==1.22.0
+agent-framework-openai==1.17.0
+agent-framework-foundry-hosting==1.0.0b261015
+azure-identity==1.26.0
+azure-keyvault-secrets==4.11.3
+azure-monitor-opentelemetry==1.8.11
+debugpy==1.8.17

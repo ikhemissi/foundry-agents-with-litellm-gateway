@@ -21,11 +21,13 @@ const version = {
 const liveAgent = { versions: { latest: version } };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 
-test('wires both azd lifecycle hooks without a native agent service', () => {
+test('keeps prompt deployment hooks alongside the native hosted agent service', () => {
   for (const hook of ['postprovision', 'postdeploy']) {
     assert.match(manifest, new RegExp(`${hook}:\\n\\s+shell: sh\\n\\s+run: node scripts/deploy-prompt-agent\\.mjs`));
   }
-  assert.doesNotMatch(manifest, /host: azure\.ai\.agent/);
+  assert.match(manifest, /--template-file infra\/modules\/hosted-agent\.bicep/);
+  assert.match(manifest, /ai-tutor-hosted-agent:\n\s+host: azure\.ai\.agent/);
+  assert.doesNotMatch(manifest, /ai-tutor-prompt-agent:\n\s+host:/);
   assert.match(manifest, /infra:\n\s+provider: bicep/);
 });
 

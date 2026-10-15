@@ -1,7 +1,10 @@
 # LiteLLM on Azure Container Apps with Microsoft Foundry
 
 An azd + Bicep sample deploying two independent Foundry accounts: a source
-hosting `gpt-5.4-nano`, and a consumer running an AI tutor through LiteLLM.
+hosting `gpt-5.4-nano`, and a consumer running two independent AI tutors through
+LiteLLM: a managed prompt agent and a Python hosted agent built with Microsoft
+Agent Framework. Both demonstrate calling models behind the same gateway;
+neither agent calls the other.
 The sample provisions no model capacity in the consumer account.
 
 ## Architecture
@@ -11,6 +14,7 @@ flowchart LR
     User["Learner / client"]
     subgraph Consumer["Consumer Foundry · consumer-project"]
         Tutor["ai-tutor-prompt-agent"]
+        Hosted["ai-tutor-hosted-agent<br/>Python + Microsoft Agent Framework"]
         Connection["litellm-gateway<br/>ModelGateway connection"]
         Tutor -->|"litellm-gateway/gpt-5.4-nano"| Connection
     end
@@ -20,12 +24,16 @@ flowchart LR
         Model["gpt-5.4-nano"]
     end
     User -->|"Entra authentication"| Tutor
+    User -->|"Entra authentication"| Hosted
     Connection -->|"HTTPS + bearer key"| Gateway
+    Hosted -->|"OpenAI Chat Completions<br/>gpt-5.4-nano + bearer key"| Gateway
+    Vault -.->|"Agent identity: read gateway key"| Hosted
     Vault -.->|"Managed identity: resolve gateway key"| Gateway
     Gateway -->|"Managed identity + Azure RBAC"| Model
     Insights["Application Insights"]
     Workspace["Shared Log Analytics workspace"]
     Tutor -.->|"Project managed identity: traces"| Insights
+    Hosted -.->|"Agent identity: OpenTelemetry"| Insights
     Gateway -.->|"OTel sidecar + managed identity: traces"| Insights
     Insights -.->|"Workspace-backed storage"| Workspace
     Consumer -.->|"Resource diagnostics"| Workspace
@@ -33,13 +41,16 @@ flowchart LR
     Vault -.->|"Audit logs"| Workspace
 ```
 
-LiteLLM uses managed identity for upstream inference. The consumer connection
-holds a gateway credential, not direct access to the source model.
+LiteLLM uses managed identity for upstream inference. The prompt agent uses the
+consumer's ModelGateway connection; the hosted agent calls LiteLLM's `/v1` API
+directly. Neither has direct access to the source model.
 
 ## Prerequisites
 
-- Azure CLI, Azure Developer CLI, and Bicep (`az bicep install`).
+- Azure CLI, Azure Developer CLI 1.35+, and Bicep (`az bicep install`).
+- Foundry agents azd extension (`azd extension install azure.ai.agents`).
 - Bash, OpenSSL, and Node.js 18+ for deployment hooks and tests.
+- Python 3.13 for local hosted-agent development (not required for remote builds).
 - Subscription quota for `gpt-5.4-nano` with the `GlobalStandard` SKU.
 - Permission to provision resources and create role assignments: Owner, or
   Contributor plus an appropriate Azure RBAC administrator role.
@@ -61,9 +72,10 @@ azd env new litellm-demo --location eastus --subscription <subscription-id>
 LITELLM_MASTER_KEY="sk-$(openssl rand -hex 32)" azd up
 ```
 
-`azd up` provisions infrastructure and deploys the tutor through lifecycle hooks.
-No Docker, container registry, Python packages, or Foundry azd extension is
-required for the hook-based deployment.
+`azd up` provisions infrastructure and deploys both tutors. The prompt agent uses
+lifecycle hooks; the hosted agent uses native azd code deployment with a remote
+Python build, followed by a Bicep RBAC hook. No Docker or container registry is
+required.
 
 Configuration:
 
@@ -80,20 +92,27 @@ Configuration:
   before provisioning to change capacity. Availability and quota can change.
 - **GlobalStandard does not guarantee inference stays in the selected region.**
 
-## Update the tutor
+## The two tutors
+
+| Agent | Implementation | Model selection | Deploy/update |
+| --- | --- | --- | --- |
+| `ai-tutor-prompt-agent` | Foundry-managed prompt | `litellm-gateway/gpt-5.4-nano` through the ModelGateway connection | `azd hooks run postprovision` |
+| `ai-tutor-hosted-agent` | Python + Microsoft Agent Framework | `gpt-5.4-nano` directly against LiteLLM `/v1` | `azd deploy ai-tutor-hosted-agent` |
+
+Both provide explanations, hints, worked examples, and practice questions.
+They are separate agents in `consumer-project`, with no external tools or
+cross-session memory. Deploying either does not replace the other.
+
+### Prompt tutor
 
 Edit [agent.json](agents/ai-tutor-prompt-agent/agent.json), then run:
 
 ```bash
-azd hooks run postdeploy
+azd hooks run postprovision
 ```
 
-The tutor provides explanations, hints, worked examples, and practice questions.
-It is a managed prompt agent with no external tools or persistent memory.
-`ai-tutor-hosted-agent` is reserved for a future hosted implementation.
-
 The JSON follows the standard prompt-agent layout: top-level `name`,
-`description`, `kind`, `model`, and `instructions`. Each agent explicitly selects
+`description`, `kind`, `model`, and `instructions`. The prompt agent explicitly selects
 its gateway model, currently `"model": "litellm-gateway/gpt-5.4-nano"`.
 Changing this value selects a model; it does not provision one. The alias must
 already be configured in LiteLLM and exposed by the Foundry connection.
@@ -110,6 +129,36 @@ reuse the latest version; changes create a new version.
 `postdeploy`, so infrastructure and agent updates stay aligned. Running it twice
 during `azd up` does not create duplicate versions. Agent deployment does not
 read the LiteLLM key.
+
+### Hosted tutor
+
+[main.py](agents/ai-tutor-hosted-agent/main.py) wraps an Agent Framework
+`OpenAIChatCompletionClient` with Foundry's `ResponsesHostServer`. Clients invoke
+it through the Foundry Responses protocol; its own model requests go to LiteLLM
+Chat Completions, not to the prompt agent.
+
+Edit [agent.json](agents/ai-tutor-hosted-agent/agent.json) to change its tutor
+instructions or LiteLLM model alias, then run `azd deploy ai-tutor-hosted-agent`.
+Its model is intentionally `gpt-5.4-nano`, without the connection prefix: direct
+gateway requests use LiteLLM aliases, whereas the prompt agent uses Foundry's
+connection-qualified name.
+
+The hosted identity exists only after deployment, so a small service-level
+`postdeploy` hook reads that identity and applies
+[hosted-agent.bicep](infra/modules/hosted-agent.bicep) to grant **Key Vault Secrets
+User** on just the gateway secret and **Monitoring Metrics Publisher** on the
+shared Application Insights component. The code resolves the secret lazily on
+model requests, rather than at server startup. No key is included in the code
+package or hosted-agent environment.
+The hook does not create or deploy the agent: packaging, remote build, versioning,
+and publication use the standard Foundry azd extension.
+
+For local development, create `.venv` in
+[the hosted agent folder](agents/ai-tutor-hosted-agent), then run
+`azd ai agent run ai-tutor-hosted-agent --no-client` from the project root.
+The command installs the pinned Python dependencies and injects the selected azd
+environment. Local calls use your signed-in Azure identity. Press **F5** in
+VS Code to start the debugger and open Foundry Toolkit Agent Inspector.
 
 ## Permissions and secrets
 
@@ -164,6 +213,10 @@ The connection string identifies the component; it does not replace authenticati
 Gateway prompt/response capture is disabled. Foundry traces can contain sensitive
 GenAI data, which the deployer's explicit reader roles allow them to access.
 
+The hosted tutor emits Agent Framework/OpenTelemetry traces to the same component
+using its own identity, with message-content capture disabled. The prompt tutor
+continues using Foundry's project-managed tracing.
+
 Foundry accounts/projects, Key Vault, ACA, and the ACA environment send supported
 resource logs and metrics to the same workspace. ACA uses Azure Monitor diagnostic
 settings instead of workspace shared keys. Resource diagnostics are not Application
@@ -181,6 +234,9 @@ several minutes and incurs Azure Monitor charges.
 ```bash
 # Compile Bicep and run local contract/unit tests.
 node --test tests/infra.test.mjs tests/agent.test.mjs
+node --test tests/hosted-agent.test.mjs
+agents/ai-tutor-hosted-agent/.venv/bin/python -m unittest discover \
+  -s agents/ai-tutor-hosted-agent -p 'test_*.py'
 
 # Preview infrastructure changes; supply the existing master key as above.
 azd provision --preview
@@ -190,8 +246,9 @@ azd down
 ```
 
 In the consumer Foundry portal, inspect the connection under **Manage > Resource
-details > Admin-connected models**, and select `ai-tutor-prompt-agent` to test
-the tutor. Inference incurs model usage charges.
+details > Admin-connected models**, and select either `ai-tutor-prompt-agent` or
+`ai-tutor-hosted-agent` to test the independent tutors. Inference and hosted-agent
+compute incur usage charges.
 
 This is a public-network demonstration, not a production landing zone:
 
@@ -218,13 +275,15 @@ model field during native `azd deploy` validation:
 model deployment name "litellm-gateway/gpt-5.4-nano" is not valid
 ```
 
-This prevents using the gateway reference directly in an `azure.ai.agent`
-service. Quotes or escaping do not help: validation checks the parsed string.
+This prevents using the gateway reference directly in a native prompt
+`azure.ai.agent` service. Quotes or escaping do not help: validation checks the parsed string.
 Renaming the model or connection cannot remove Foundry's required separator.
 
-**Workaround:** this sample uses azd hooks to deploy the agent through the
+**Workaround:** this sample uses azd hooks to deploy the prompt agent through the
 supported Foundry API, preserving the exact gateway reference. This is an
-extension validation limitation, not a Foundry or LiteLLM limitation.
+extension validation limitation, not a Foundry or LiteLLM limitation. It does not
+affect the native hosted deployment: Python selects a LiteLLM alias at runtime
+instead of declaring a Foundry model reference in the service manifest.
 
 See [Foundry gateway-connected models](https://learn.microsoft.com/azure/foundry/agents/how-to/ai-gateway#create-a-prompt-agent-with-the-model-connection)
 and [azd lifecycle hooks](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-extensibility).

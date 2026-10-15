@@ -4,3 +4,8 @@
 !.env.example
 infra/*.json
 !infra/main.parameters.json
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/

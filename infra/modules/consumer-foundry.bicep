@@ -123,4 +123,5 @@ resource projectDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-pr
 
 output name string = consumerFoundry.name
 output projectName string = consumerProject.name
+output projectId string = consumerProject.id
 output projectEndpoint string = consumerProject.properties.endpoints['AI Foundry API']

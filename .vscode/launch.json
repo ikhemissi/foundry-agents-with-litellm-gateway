@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug AI tutor hosted agent",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5679
+      },
+      "preLaunchTask": "Open hosted tutor Inspector",
+      "justMyCode": true
+    }
+  ]
+}
