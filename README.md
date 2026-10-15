@@ -1,49 +1,74 @@
 # LiteLLM on Azure Container Apps with Microsoft Foundry
 
-An azd + Bicep sample deploying two independent Foundry accounts: a source
-hosting `gpt-5.4-nano`, and a consumer running two independent AI tutors through
-LiteLLM: a managed prompt agent and a Python hosted agent built with Microsoft
-Agent Framework. Both demonstrate calling models behind the same gateway;
-neither agent calls the other.
-The sample provisions no model capacity in the consumer account.
+An azd + Bicep demo of **Microsoft Foundry and LiteLLM integration in both
+directions**: Foundry agents consume models through LiteLLM, and LiteLLM calls a
+model hosted in Foundry using managed identity.
+
+Two independent AI tutors illustrate the agent-side integration:
+
+- **Prompt agent:** Foundry routes model requests through a ModelGateway connection
+  to LiteLLM.
+- **Hosted agent:** Python code built with Microsoft Agent Framework runs in
+  Foundry and calls LiteLLM's OpenAI-compatible API directly.
+
+Both use the same `gpt-5.4-nano` model in a separate **source Foundry account**.
+The **consumer Foundry account** hosts both agents but receives no model capacity
+from this sample. Neither tutor calls the other or accesses the source model
+directly.
 
 ## Architecture
+
+### Prompt agent: Foundry-managed gateway integration
+
+The agent selects `litellm-gateway/gpt-5.4-nano`. Foundry resolves the connection
+and authenticates to LiteLLM with its stored bearer credential; LiteLLM then
+authenticates to the source Foundry model using managed identity and Azure RBAC.
 
 ```mermaid
 flowchart LR
     User["Learner / client"]
     subgraph Consumer["Consumer Foundry · consumer-project"]
         Tutor["ai-tutor-prompt-agent"]
-        Hosted["ai-tutor-hosted-agent<br/>Python + Microsoft Agent Framework"]
         Connection["litellm-gateway<br/>ModelGateway connection"]
         Tutor -->|"litellm-gateway/gpt-5.4-nano"| Connection
     end
     Gateway["LiteLLM<br/>Azure Container Apps"]
-    Vault["Azure Key Vault"]
     subgraph Source["Source Foundry"]
         Model["gpt-5.4-nano"]
     end
     User -->|"Entra authentication"| Tutor
-    User -->|"Entra authentication"| Hosted
     Connection -->|"HTTPS + bearer key"| Gateway
-    Hosted -->|"OpenAI Chat Completions<br/>gpt-5.4-nano + bearer key"| Gateway
-    Vault -.->|"Agent identity: read gateway key"| Hosted
-    Vault -.->|"Managed identity: resolve gateway key"| Gateway
     Gateway -->|"Managed identity + Azure RBAC"| Model
-    Insights["Application Insights"]
-    Workspace["Shared Log Analytics workspace"]
-    Tutor -.->|"Project managed identity: traces"| Insights
-    Hosted -.->|"Agent identity: OpenTelemetry"| Insights
-    Gateway -.->|"OTel sidecar + managed identity: traces"| Insights
-    Insights -.->|"Workspace-backed storage"| Workspace
-    Consumer -.->|"Resource diagnostics"| Workspace
-    Source -.->|"Resource diagnostics"| Workspace
-    Vault -.->|"Audit logs"| Workspace
 ```
 
-LiteLLM uses managed identity for upstream inference. The prompt agent uses the
-consumer's ModelGateway connection; the hosted agent calls LiteLLM's `/v1` API
-directly. Neither has direct access to the source model.
+### Hosted agent: direct OpenAI-compatible integration
+
+The hosted tutor exposes the Foundry Responses protocol to clients. Its own
+Python code calls LiteLLM Chat Completions with the alias `gpt-5.4-nano`, without
+a ModelGateway connection or a call to the prompt tutor. Its agent identity reads
+the gateway credential from Key Vault.
+
+```mermaid
+flowchart LR
+    User["Learner / client"]
+    subgraph Consumer["Consumer Foundry · consumer-project"]
+        Hosted["ai-tutor-hosted-agent<br/>Python + Microsoft Agent Framework"]
+    end
+    Vault["Azure Key Vault"]
+    Gateway["LiteLLM<br/>Azure Container Apps"]
+    subgraph Source["Source Foundry"]
+        Model["gpt-5.4-nano"]
+    end
+    User -->|"Entra authentication<br/>Foundry Responses protocol"| Hosted
+    Hosted -.->|"Agent identity: read gateway key"| Vault
+    Hosted -->|"OpenAI Chat Completions<br/>gpt-5.4-nano + bearer key"| Gateway
+    Gateway -->|"Managed identity + Azure RBAC"| Model
+```
+
+Both paths share the same LiteLLM deployment, whose identity also resolves its
+gateway key from Key Vault. Both Foundry projects, the hosted tutor, and LiteLLM
+use shared Application Insights; supported resource diagnostics go to its Log
+Analytics workspace. See [Shared monitoring](#shared-monitoring).
 
 ## Prerequisites
 
