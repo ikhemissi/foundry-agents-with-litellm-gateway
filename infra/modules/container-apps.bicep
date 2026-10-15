@@ -8,11 +8,8 @@ param gatewayIdentityId string
 param gatewayClientId string
 param sourceOpenAIEndpoint string
 param masterKeySecretUri string
-param workspaceName string
-
-resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
-  name: workspaceName
-}
+param workspaceId string
+param appInsightsConnectionString string
 
 resource environment 'Microsoft.App/managedEnvironments@2025-01-01' = {
   name: 'cae-litellm-${suffix}'
@@ -20,11 +17,7 @@ resource environment 'Microsoft.App/managedEnvironments@2025-01-01' = {
   tags: tags
   properties: {
     appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logs.properties.customerId
-        sharedKey: logs.listKeys().primarySharedKey
-      }
+      destination: 'azure-monitor'
     }
     workloadProfiles: [
       {
@@ -68,6 +61,12 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
           #disable-next-line use-secure-value-for-secure-inputs
           value: loadTextContent('../../litellm/config.yaml')
         }
+        {
+          name: 'otel-config'
+          // Collector configuration contains only environment references, not credentials.
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../monitoring/otel-collector.yaml')
+        }
       ]
     }
     template: {
@@ -95,6 +94,22 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
             {
               name: 'LITELLM_MASTER_KEY'
               secretRef: 'litellm-master-key'
+            }
+            {
+              name: 'OTEL_EXPORTER'
+              value: 'otlp_http'
+            }
+            {
+              name: 'OTEL_ENDPOINT'
+              value: 'http://127.0.0.1:4318/v1/traces'
+            }
+            {
+              name: 'OTEL_SERVICE_NAME'
+              value: 'litellm-gateway'
+            }
+            {
+              name: 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT'
+              value: 'NO_CONTENT'
             }
           ]
           resources: {
@@ -138,6 +153,53 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
             }
           ]
         }
+        {
+          name: 'otel-collector'
+          image: 'otel/opentelemetry-collector-contrib:0.162.0'
+          args: [
+            '--config=/etc/otelcol/config.yaml'
+          ]
+          env: [
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: gatewayClientId
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsightsConnectionString
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          volumeMounts: [
+            {
+              volumeName: 'otel-config'
+              mountPath: '/etc/otelcol'
+            }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/'
+                port: 13133
+                scheme: 'HTTP'
+              }
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/'
+                port: 13133
+                scheme: 'HTTP'
+              }
+              periodSeconds: 10
+            }
+          ]
+        }
       ]
       volumes: [
         {
@@ -150,12 +212,49 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
             }
           ]
         }
+        {
+          name: 'otel-config'
+          storageType: 'Secret'
+          secrets: [
+            {
+              secretRef: 'otel-config'
+              path: 'config.yaml'
+            }
+          ]
+        }
       ]
       scale: {
         minReplicas: 1
         maxReplicas: 1
       }
     }
+  }
+}
+
+resource environmentDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'shared-monitoring'
+  scope: environment
+  properties: {
+    workspaceId: workspaceId
+    logs: [
+      { category: 'ContainerAppConsoleLogs', enabled: true }
+      { category: 'ContainerAppSystemLogs', enabled: true }
+      { category: 'ContainerAppHTTPLogs', enabled: true }
+    ]
+    metrics: [
+      { category: 'AllMetrics', enabled: true }
+    ]
+  }
+}
+
+resource gatewayDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'shared-monitoring'
+  scope: gateway
+  properties: {
+    workspaceId: workspaceId
+    metrics: [
+      { category: 'AllMetrics', enabled: true }
+    ]
   }
 }
 

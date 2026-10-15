@@ -7,6 +7,12 @@ param principalId string
 param gatewayIdentityId string
 param gatewayPrincipalId string
 param modelCapacity int
+param appInsightsName string
+param workspaceId string
+
+resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: appInsightsName
+}
 
 var modelDeploymentName = 'gpt-5.4-nano'
 var openAIUserRoleId = subscriptionResourceId(
@@ -88,6 +94,70 @@ resource deployerSourceAIUser 'Microsoft.Authorization/roleAssignments@2022-04-0
     )
     principalId: principalId
     principalType: 'User'
+  }
+}
+
+resource projectTelemetryPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(appInsights.id, sourceProject.id, 'Monitoring Metrics Publisher')
+  scope: appInsights
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '3913510d-42f4-4e42-8a64-420c390055eb'
+    )
+    principalId: sourceProject.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// This supported API includes ProjectManagedIdentity; Bicep's published types lag the service.
+#disable-next-line BCP081
+resource projectAppInsights 'Microsoft.CognitiveServices/accounts/projects/connections@2026-09-01' = {
+  parent: sourceProject
+  name: appInsightsName
+  properties: {
+    category: 'AppInsights'
+    target: appInsights.id
+    authType: 'ProjectManagedIdentity'
+    isSharedToAll: false
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: appInsights.id
+      ApplicationInsightsConnectionString: appInsights.properties.ConnectionString
+    }
+  }
+  dependsOn: [
+    projectTelemetryPublisher
+  ]
+}
+
+resource accountDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'shared-monitoring'
+  scope: sourceFoundry
+  properties: {
+    workspaceId: workspaceId
+    logs: [
+      { category: 'Audit', enabled: true }
+      { category: 'AzureOpenAIRequestUsage', enabled: true }
+    ]
+    metrics: [
+      { category: 'AllMetrics', enabled: true }
+    ]
+  }
+}
+
+resource projectDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'shared-monitoring'
+  scope: sourceProject
+  properties: {
+    workspaceId: workspaceId
+    logs: [
+      { category: 'Audit', enabled: true }
+      { category: 'Trace', enabled: true }
+    ]
+    metrics: [
+      { category: 'AllMetrics', enabled: true }
+    ]
   }
 }
 

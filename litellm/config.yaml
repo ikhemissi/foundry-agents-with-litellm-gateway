@@ -7,6 +7,8 @@ model_list:
 
 litellm_settings:
   enable_azure_ad_token_refresh: true
+  callbacks: ["otel"]
+  turn_off_message_logging: true
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

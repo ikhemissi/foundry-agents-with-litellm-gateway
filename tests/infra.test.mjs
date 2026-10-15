@@ -92,6 +92,7 @@ test('passes configurable tags through the resource group and module to every ta
     'Microsoft.Authorization/roleAssignments',
     'Microsoft.CognitiveServices/accounts/deployments',
     'Microsoft.CognitiveServices/accounts/projects/connections',
+    'Microsoft.Insights/diagnosticSettings',
   ]);
   for (const resource of resources.filter(resource =>
     resource.type !== 'Microsoft.Resources/resourceGroups' && !untaggableTypes.has(resource.type))) {
@@ -115,11 +116,13 @@ test('creates two Foundry accounts and projects, but only one source deployment'
   assert.equal(deployments[0].properties.model.version, '2026-03-17');
   assert.equal(deployments[0].sku.name, 'GlobalStandard');
   assert.equal(resources.some(resource => /agents/i.test(resource.type)), false);
-  assert.equal(ofType('Microsoft.CognitiveServices/accounts/projects/connections').length, 1);
+  assert.equal(ofType('Microsoft.CognitiveServices/accounts/projects/connections').length, 3);
 });
 
 test('connects the consumer project to LiteLLM with static discovery and bearer authentication', () => {
-  const [connection] = ofType('Microsoft.CognitiveServices/accounts/projects/connections');
+  const connection = ofType('Microsoft.CognitiveServices/accounts/projects/connections').find(
+    resource => resource.properties.category === 'ModelGateway',
+  );
   assert.match(connection.name, /parameters\('consumerFoundryName'\)/);
   assert.match(connection.name, /litellm-gateway/);
   assert.equal(connection.properties.category, 'ModelGateway');
@@ -146,7 +149,7 @@ test('uses source-scoped managed identity access and secure gateway secrets', ()
   assert.equal(template.parameters.litellmMasterKey.type.toLowerCase(), 'securestring');
   const roles = ofType('Microsoft.Authorization/roleAssignments');
   const identityRoles = roles.filter(role => role.properties.principalType === 'ServicePrincipal');
-  assert.equal(identityRoles.length, 2);
+  assert.equal(identityRoles.length, 5);
   assert.equal(identityRoles.filter(role => /foundry-source-/.test(role.scope)).length, 1);
   const [app] = ofType('Microsoft.App/containerApps');
   assert.equal(app.identity.type, 'UserAssigned');
@@ -202,7 +205,7 @@ test('grants the deployer scoped resource management, vault administration, and 
   const roles = ofType('Microsoft.Authorization/roleAssignments').filter(
     role => role.properties.principalType === 'User',
   );
-  assert.equal(roles.length, 4);
+  assert.equal(roles.length, 6);
   for (const role of roles) {
     assert.equal(role.properties.principalId, "[parameters('principalId')]");
   }
@@ -221,6 +224,105 @@ test('grants the deployer scoped resource management, vault administration, and 
   assert.equal(aiRoles.length, 2);
   assert.ok(aiRoles.some(role => /foundry-source-/.test(role.scope)));
   assert.ok(aiRoles.some(role => /foundry-consumer-/.test(role.scope)));
+});
+
+test('creates one shared Entra-only Application Insights component backed by the workspace', () => {
+  const [insights] = ofType('Microsoft.Insights/components');
+  assert.equal(ofType('Microsoft.Insights/components').length, 1);
+  assert.equal(ofType('Microsoft.OperationalInsights/workspaces').length, 1);
+  assert.equal(insights.properties.DisableLocalAuth, true);
+  assert.equal(insights.properties.IngestionMode, 'LogAnalytics');
+  assert.match(insights.properties.WorkspaceResourceId, /Microsoft.OperationalInsights\/workspaces/);
+  assert.match(moduleNamed('gateway-monitoring').dependsOn.join(' '), /gateway-identity/);
+  for (const name of ['source-foundry', 'consumer-foundry', 'gateway-key-vault', 'gateway-container-apps']) {
+    assert.match(moduleNamed(name).dependsOn.join(' '), /gateway-monitoring/);
+    assert.match(moduleNamed(name).properties.parameters.workspaceId.value, /gateway-monitoring.*outputs.workspaceId.value/);
+  }
+  assert.match(template.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING.value, /gateway-monitoring.*outputs.connectionString.value/);
+  assert.match(template.outputs.APPLICATIONINSIGHTS_RESOURCE_ID.value, /gateway-monitoring.*outputs.appInsightsId.value/);
+});
+
+test('grants explicit monitoring read access to the deployer and publish-only access to service identities', () => {
+  const monitoring = moduleTemplate('gateway-monitoring');
+  assert.deepEqual(monitoring.variables.readerRoles, [
+    '73c42c96-874c-492b-b04d-ab87d138a893',
+    'dbc9c667-e97f-4491-aee6-90b9cf960190',
+  ]);
+  const readerAssignments = monitoring.resources.filter(resource =>
+    resource.type === 'Microsoft.Authorization/roleAssignments'
+      && resource.properties.principalType === 'User');
+  assert.equal(readerAssignments.length, 2);
+  assert.ok(readerAssignments.some(role => /Microsoft.Insights\/components/.test(role.scope)));
+  assert.ok(readerAssignments.some(role => /Microsoft.OperationalInsights\/workspaces/.test(role.scope)));
+  for (const role of readerAssignments) {
+    assert.equal(role.copy.count, "[length(variables('readerRoles'))]");
+    assert.match(role.properties.roleDefinitionId, /variables\('readerRoles'\)/);
+    assert.equal(role.properties.principalId, "[parameters('principalId')]");
+  }
+  const publishers = ofType('Microsoft.Authorization/roleAssignments').filter(role =>
+    /3913510d-42f4-4e42-8a64-420c390055eb/.test(role.properties.roleDefinitionId));
+  assert.equal(publishers.length, 3);
+  for (const publisher of publishers) {
+    assert.equal(publisher.properties.principalType, 'ServicePrincipal');
+    assert.match(publisher.scope, /Microsoft.Insights\/components/);
+  }
+  assert.ok(publishers.some(role => role.properties.principalId === "[parameters('gatewayPrincipalId')]"));
+  assert.equal(publishers.filter(role => /Microsoft.CognitiveServices\/accounts\/projects.*identity.principalId/.test(
+    role.properties.principalId,
+  )).length, 2);
+});
+
+test('links both Foundry projects to the shared Application Insights through project managed identity', () => {
+  const connections = ofType('Microsoft.CognitiveServices/accounts/projects/connections').filter(
+    resource => resource.properties.category === 'AppInsights',
+  );
+  assert.equal(connections.length, 2);
+  for (const connection of connections) {
+    assert.equal(connection.properties.authType, 'ProjectManagedIdentity');
+    assert.equal(connection.properties.credentials, undefined);
+    assert.equal(connection.properties.metadata.ApiType, 'Azure');
+    assert.equal(connection.properties.metadata.ResourceId, connection.properties.target);
+    assert.match(connection.properties.metadata.ApplicationInsightsConnectionString,
+      /Microsoft.Insights\/components.*ConnectionString/);
+    assert.match(connection.properties.target, /Microsoft.Insights\/components/);
+    assert.match(connection.dependsOn.join(' '), /Microsoft.Authorization\/roleAssignments/);
+  }
+});
+
+test('routes resource diagnostics to the shared workspace without collecting model request bodies', () => {
+  const diagnostics = ofType('Microsoft.Insights/diagnosticSettings');
+  assert.equal(diagnostics.length, 7);
+  for (const diagnostic of diagnostics) {
+    assert.equal(diagnostic.properties.workspaceId, "[parameters('workspaceId')]");
+    assert.deepEqual(diagnostic.properties.metrics, [{ category: 'AllMetrics', enabled: true }]);
+    assert.equal(diagnostic.properties.logs?.some(log => log.category === 'RequestResponse') ?? false, false);
+  }
+  assert.equal(diagnostics.filter(resource => /accounts\/projects/.test(resource.scope)).length, 2);
+  assert.equal(diagnostics.filter(resource => /Microsoft.KeyVault\/vaults/.test(resource.scope)).length, 1);
+  const [environment] = ofType('Microsoft.App/managedEnvironments');
+  assert.deepEqual(environment.properties.appLogsConfiguration, { destination: 'azure-monitor' });
+  assert.equal(JSON.stringify(moduleTemplate('gateway-container-apps')).includes('listKeys'), false);
+});
+
+test('exports LiteLLM traces through a loopback-only collector with managed identity and no prompt capture', () => {
+  const [app] = ofType('Microsoft.App/containerApps');
+  const [gateway, collector] = app.properties.template.containers;
+  assert.equal(collector.name, 'otel-collector');
+  assert.equal(collector.image, 'otel/opentelemetry-collector-contrib:0.162.0');
+  assert.equal(collector.env.find(value => value.name === 'AZURE_CLIENT_ID').value, "[parameters('gatewayClientId')]");
+  assert.equal(collector.env.find(value => value.name === 'APPLICATIONINSIGHTS_CONNECTION_STRING').value,
+    "[parameters('appInsightsConnectionString')]");
+  assert.equal(gateway.env.find(value => value.name === 'OTEL_ENDPOINT').value, 'http://127.0.0.1:4318/v1/traces');
+  assert.equal(gateway.env.find(value => value.name === 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT').value, 'NO_CONTENT');
+  const config = readFileSync(new URL('../monitoring/otel-collector.yaml', import.meta.url), 'utf8');
+  assert.match(config, /managed_identity:\n\s+client_id: \$\{env:AZURE_CLIENT_ID\}/);
+  assert.match(config, /https:\/\/monitor\.azure\.com\/\.default/);
+  assert.match(config, /endpoint: 127\.0\.0\.1:4318/);
+  assert.match(config, /authenticator: azure_auth/);
+  assert.match(config, /connection_string: \$\{env:APPLICATIONINSIGHTS_CONNECTION_STRING\}/);
+  const proxyConfig = readFileSync(new URL('../litellm/config.yaml', import.meta.url), 'utf8');
+  assert.match(proxyConfig, /callbacks: \["otel"\]/);
+  assert.match(proxyConfig, /turn_off_message_logging: true/);
 });
 
 test('serializes source project creation after model deployment to avoid account conflicts', () => {

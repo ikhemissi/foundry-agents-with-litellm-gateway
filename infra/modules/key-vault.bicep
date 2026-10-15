@@ -6,6 +6,7 @@ param suffix string
 param principalId string
 param gatewayIdentityId string
 param gatewayPrincipalId string
+param workspaceId string
 
 @secure()
 param litellmMasterKey string
@@ -62,6 +63,21 @@ resource deployerSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04
     )
     principalId: principalId
     principalType: 'User'
+  }
+}
+
+resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'shared-monitoring'
+  scope: keyVault
+  properties: {
+    workspaceId: workspaceId
+    logs: [
+      { category: 'AuditEvent', enabled: true }
+      { category: 'AzurePolicyEvaluationDetails', enabled: true }
+    ]
+    metrics: [
+      { category: 'AllMetrics', enabled: true }
+    ]
   }
 }
 

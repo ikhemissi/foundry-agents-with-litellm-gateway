@@ -73,6 +73,8 @@ module sourceFoundry './modules/source-foundry.bicep' = {
     gatewayIdentityId: identity.outputs.id
     gatewayPrincipalId: identity.outputs.principalId
     modelCapacity: modelCapacity
+    appInsightsName: monitoring.outputs.appInsightsName
+    workspaceId: monitoring.outputs.workspaceId
   }
 }
 
@@ -84,6 +86,8 @@ module consumerFoundry './modules/consumer-foundry.bicep' = {
     tags: resourceTags
     suffix: suffix
     principalId: principalId
+    appInsightsName: monitoring.outputs.appInsightsName
+    workspaceId: monitoring.outputs.workspaceId
   }
 }
 
@@ -98,6 +102,7 @@ module keyVault './modules/key-vault.bicep' = {
     gatewayIdentityId: identity.outputs.id
     gatewayPrincipalId: identity.outputs.principalId
     litellmMasterKey: litellmMasterKey
+    workspaceId: monitoring.outputs.workspaceId
   }
 }
 
@@ -108,6 +113,8 @@ module monitoring './modules/monitoring.bicep' = {
     location: location
     tags: resourceTags
     suffix: suffix
+    principalId: principalId
+    gatewayPrincipalId: identity.outputs.principalId
   }
 }
 
@@ -123,7 +130,8 @@ module containerApps './modules/container-apps.bicep' = {
     gatewayClientId: identity.outputs.clientId
     sourceOpenAIEndpoint: sourceFoundry.outputs.openAIEndpoint
     masterKeySecretUri: keyVault.outputs.masterKeySecretUri
-    workspaceName: monitoring.outputs.name
+    workspaceId: monitoring.outputs.workspaceId
+    appInsightsConnectionString: monitoring.outputs.connectionString
   }
 }
 
@@ -153,3 +161,7 @@ output CONSUMER_FOUNDRY_PROJECT_ENDPOINT string = consumerFoundry.outputs.projec
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output CONSUMER_MODEL_CONNECTION_NAME string = modelConnection.outputs.name
 output CONSUMER_MODEL_REFERENCE string = modelConnection.outputs.modelReference
+output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
+output APPLICATIONINSIGHTS_RESOURCE_ID string = monitoring.outputs.appInsightsId
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
+output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.workspaceId

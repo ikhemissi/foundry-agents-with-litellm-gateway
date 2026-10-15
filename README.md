@@ -23,6 +23,14 @@ flowchart LR
     Connection -->|"HTTPS + bearer key"| Gateway
     Vault -.->|"Managed identity: resolve gateway key"| Gateway
     Gateway -->|"Managed identity + Azure RBAC"| Model
+    Insights["Application Insights"]
+    Workspace["Shared Log Analytics workspace"]
+    Tutor -.->|"Project managed identity: traces"| Insights
+    Gateway -.->|"OTel sidecar + managed identity: traces"| Insights
+    Insights -.->|"Workspace-backed storage"| Workspace
+    Consumer -.->|"Resource diagnostics"| Workspace
+    Source -.->|"Resource diagnostics"| Workspace
+    Vault -.->|"Audit logs"| Workspace
 ```
 
 LiteLLM uses managed identity for upstream inference. The consumer connection
@@ -113,6 +121,8 @@ Entra Global Administrator:
 | Contributor | Sample resource group |
 | Key Vault Secrets Officer | Sample vault |
 | Foundry User / Azure AI User | Both Foundry accounts |
+| Log Analytics Reader | Application Insights and its workspace |
+| Privileged Monitoring Data Reader | Application Insights and its workspace (protected GenAI data) |
 
 Contributor does not permit role-assignment creation; provisioning RBAC still
 requires appropriate administrator permissions. The template targets a human
@@ -139,6 +149,33 @@ Never commit secrets or share `.azure/` contents. Using `azd env set` for the
 master key persists a local copy; the process-scoped examples above avoid that.
 Production consumers should use restricted gateway credentials, not its master key.
 
+## Shared monitoring
+
+[monitoring.bicep](infra/modules/monitoring.bicep) creates one workspace-backed
+Application Insights resource and its Log Analytics workspace. Local ingestion
+authentication is disabled. Both Foundry projects connect to it with **Project
+Managed Identity**, and each project identity receives **Monitoring Metrics
+Publisher** on that component. Project-managed trace ingestion is a Foundry preview.
+
+LiteLLM emits OpenTelemetry spans to a loopback-only collector sidecar, which
+exports using the gateway managed identity and the same publisher role. Unlike
+ACA's managed Application Insights exporter, this supports Entra-only ingestion.
+The connection string identifies the component; it does not replace authentication.
+Gateway prompt/response capture is disabled. Foundry traces can contain sensitive
+GenAI data, which the deployer's explicit reader roles allow them to access.
+
+Foundry accounts/projects, Key Vault, ACA, and the ACA environment send supported
+resource logs and metrics to the same workspace. ACA uses Azure Monitor diagnostic
+settings instead of workspace shared keys. Resource diagnostics are not Application
+Insights traces; managed identities, role assignments, and secrets have no separate
+diagnostic stream (vault operations are covered by vault audit logs).
+
+azd exports `APPLICATIONINSIGHTS_NAME`, `APPLICATIONINSIGHTS_RESOURCE_ID`,
+`APPLICATIONINSIGHTS_CONNECTION_STRING`, and `AZURE_LOG_ANALYTICS_WORKSPACE_ID`.
+Use **Application Insights > Logs** or **Foundry > Agents > Traces** to inspect
+telemetry. Resource logs are queried in the shared workspace. Ingestion may take
+several minutes and incurs Azure Monitor charges.
+
 ## Validate and operate
 
 ```bash
@@ -160,6 +197,7 @@ This is a public-network demonstration, not a production landing zone:
 
 - LiteLLM is pinned to `v1.105.1`, with one always-on replica, 1 vCPU, 2 GiB,
   and no Postgres/Redis. There is no persistent spend tracking or high availability.
+- Its OpenTelemetry collector sidecar adds 0.25 vCPU and 0.5 GiB per replica.
 - Log Analytics retains logs for 30 days. Avoid logging sensitive prompts.
 - RBAC propagation may delay initial requests. ACA capacity errors may require
   another supported region or a later retry; model quota does not guarantee ACA capacity.
