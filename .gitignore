@@ -1,0 +1,6 @@
+.azure/
+.env
+.env.*
+!.env.example
+infra/*.json
+!infra/main.parameters.json

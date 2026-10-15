@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://aka.ms/azure-dev/v1.0/azure.yaml.json
+name: ai-gateway-litellm
+metadata:
+  template: ai-gateway-litellm
+infra:
+  provider: bicep
+  path: infra
+  module: main
