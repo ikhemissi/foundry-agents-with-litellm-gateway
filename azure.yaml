@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/azure-dev/v1.0/azure.yaml.json
-name: ai-gateway-litellm
+name: foundry-agents-with-litellm-gateway
 metadata:
-  template: ai-gateway-litellm
+  template: foundry-agents-with-litellm-gateway
 requiredVersions:
   azd: '>=1.35.0'
   extensions:
