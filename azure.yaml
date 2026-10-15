@@ -2,6 +2,13 @@
 name: ai-gateway-litellm
 metadata:
   template: ai-gateway-litellm
+hooks:
+  postprovision:
+    shell: sh
+    run: node scripts/deploy-prompt-agent.mjs
+  postdeploy:
+    shell: sh
+    run: node scripts/deploy-prompt-agent.mjs
 infra:
   provider: bicep
   path: infra

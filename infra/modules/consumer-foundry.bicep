@@ -34,7 +34,7 @@ resource consumerProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-
   }
   properties: {
     displayName: 'Gateway model consumer'
-    description: 'Uses the source model through LiteLLM; no local model capacity or agents.'
+    description: 'Hosts an AI tutor using the source model through LiteLLM; no local model capacity.'
   }
 }
 
