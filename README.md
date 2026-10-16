@@ -102,21 +102,6 @@ lifecycle hooks; the hosted agent uses native azd code deployment with a remote
 Python build, followed by a Bicep RBAC hook. No Docker or container registry is
 required.
 
-Configuration:
-
-- [main.parameters.json](infra/main.parameters.json) supplies configurable
-  `tags`, currently `SecurityControl=Ignore` and `CostControl=Ignore`.
-  Every Bicep module accepts the tags object, and all taggable resources receive
-  it alongside `azd-env-name`. Use these governance values only where authorized;
-  tags alone do not guarantee a policy exemption.
-- [main.bicep](infra/main.bicep) orchestrates resource-group-scoped
-  [modules](infra/modules). Regions are restricted to the three listed above.
-  Use a new environment to change region after provisioning.
-- The source model uses version `2026-03-17`, SKU `GlobalStandard`, and default
-  capacity `10` (10,000 tokens/minute). Set `MODEL_CAPACITY` with `azd env set`
-  before provisioning to change capacity. Availability and quota can change.
-- **GlobalStandard does not guarantee inference stays in the selected region.**
-
 ## The two tutors
 
 | Agent | Implementation | Model selection | Deploy/update |
