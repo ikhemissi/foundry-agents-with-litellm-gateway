@@ -23,6 +23,10 @@ services:
         version: 2.0.0
     env:
       LITELLM_BASE_URL: ${LITELLM_ENDPOINT}/v1
+      LITELLM_AUTH_MODE: ${HOSTED_AUTH_MODE=api_key}
+      ENTRA_GATEWAY_SCOPE: ${ENTRA_GATEWAY_SCOPE}
+      ENTRA_AGENT_CLIENT_ID: ${ENTRA_AGENT_CLIENT_ID}
+      ENTRA_AGENT_PRINCIPAL_ID: ${ENTRA_AGENT_PRINCIPAL_ID}
       AZURE_KEY_VAULT_NAME: ${AZURE_KEY_VAULT_NAME}
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
       OTEL_SERVICE_NAME: ai-tutor-hosted-agent
@@ -50,8 +54,12 @@ services:
             --parameters agentPrincipalId="$principal" \
               keyVaultName="$AZURE_KEY_VAULT_NAME" \
               appInsightsName="$APPLICATIONINSIGHTS_NAME" \
+              hostedAuthMode="${HOSTED_AUTH_MODE:-api_key}" \
             --output none
 hooks:
+  preprovision:
+    shell: sh
+    run: node scripts/validate-auth-config.mjs
   postprovision:
     shell: sh
     run: node scripts/deploy-prompt-agent.mjs

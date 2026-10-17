@@ -28,6 +28,24 @@ param modelCapacity int = 10
 @description('Pinned LiteLLM image. Change deliberately when upgrading.')
 param litellmImage string = 'ghcr.io/berriai/litellm:v1.105.1'
 
+@allowed(['api_key', 'entra'])
+param gatewayAuthMode string = 'api_key'
+@allowed(['api_key', 'entra', 'entra_delegated'])
+param hostedAuthMode string = 'api_key'
+@allowed(['api_key', 'oauth2'])
+param promptAuthMode string = 'api_key'
+param entraTenantId string = ''
+param entraGatewayClientId string = ''
+param entraAppPrincipals array = []
+param entraDelegatedUsers array = []
+param entraDelegatedActors array = []
+param entraDelegatedOnly bool = false
+@description('Actual hosted Agent ID application ID, not the ACA/project managed identity.')
+param entraAgentClientId string = ''
+@description('Actual hosted Agent ID service principal object ID; obtain and approve after first agent deployment.')
+param entraAgentPrincipalId string = ''
+param promptClientId string = ''
+
 @description('Additional tags applied to every resource type that supports tags.')
 param tags object = {}
 
@@ -132,10 +150,18 @@ module containerApps './modules/container-apps.bicep' = {
     masterKeySecretUri: keyVault.outputs.masterKeySecretUri
     workspaceId: monitoring.outputs.workspaceId
     appInsightsConnectionString: monitoring.outputs.connectionString
+    gatewayAuthMode: gatewayAuthMode
+    entraTenantId: entraTenantId
+    entraGatewayClientId: entraGatewayClientId
+    entraAppPrincipals: entraAppPrincipals
+    entraDelegatedUsers: entraDelegatedUsers
+    entraDelegatedActors: entraDelegatedActors
+    entraDelegatedOnly: entraDelegatedOnly
   }
 }
 
-module modelConnection './modules/model-connection.bicep' = {
+// OAuth credentials are installed explicitly by configure-prompt-oauth.mjs, never from azd state.
+module modelConnection './modules/model-connection.bicep' = if (promptAuthMode == 'api_key') {
   name: 'consumer-model-connection'
   scope: resourceGroup
   params: {
@@ -162,8 +188,17 @@ output AZURE_AI_PROJECT_ID string = consumerFoundry.outputs.projectId
 output AZURE_AI_PROJECT_ENDPOINT string = consumerFoundry.outputs.projectEndpoint
 output FOUNDRY_PROJECT_ENDPOINT string = consumerFoundry.outputs.projectEndpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
-output CONSUMER_MODEL_CONNECTION_NAME string = modelConnection.outputs.name
-output CONSUMER_MODEL_REFERENCE string = modelConnection.outputs.modelReference
+output CONSUMER_MODEL_CONNECTION_NAME string = 'litellm-gateway'
+output CONSUMER_MODEL_REFERENCE string = 'litellm-gateway/${sourceFoundry.outputs.modelDeploymentName}'
+output GATEWAY_AUTH_MODE string = gatewayAuthMode
+output HOSTED_AUTH_MODE string = hostedAuthMode
+output PROMPT_AUTH_MODE string = promptAuthMode
+output ENTRA_TENANT_ID string = entraTenantId
+output ENTRA_GATEWAY_CLIENT_ID string = entraGatewayClientId
+output ENTRA_GATEWAY_SCOPE string = empty(entraGatewayClientId) ? '' : 'api://${entraGatewayClientId}/.default'
+output ENTRA_AGENT_CLIENT_ID string = entraAgentClientId
+output ENTRA_AGENT_PRINCIPAL_ID string = entraAgentPrincipalId
+output ENTRA_PROMPT_CLIENT_ID string = promptClientId
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
 output APPLICATIONINSIGHTS_RESOURCE_ID string = monitoring.outputs.appInsightsId
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString

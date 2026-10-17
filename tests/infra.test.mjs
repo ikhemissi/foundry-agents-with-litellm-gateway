@@ -116,7 +116,7 @@ test('creates two Foundry accounts and projects, but only one source deployment'
   assert.equal(deployments[0].properties.model.version, '2026-03-17');
   assert.equal(deployments[0].sku.name, 'GlobalStandard');
   assert.equal(resources.some(resource => /agents/i.test(resource.type)), false);
-  assert.equal(ofType('Microsoft.CognitiveServices/accounts/projects/connections').length, 3);
+  assert.equal(ofType('Microsoft.CognitiveServices/accounts/projects/connections').length, 4);
 });
 
 test('connects the consumer project to LiteLLM with static discovery and bearer authentication', () => {
@@ -149,7 +149,7 @@ test('uses source-scoped managed identity access and secure gateway secrets', ()
   assert.equal(template.parameters.litellmMasterKey.type.toLowerCase(), 'securestring');
   const roles = ofType('Microsoft.Authorization/roleAssignments');
   const identityRoles = roles.filter(role => role.properties.principalType === 'ServicePrincipal');
-  assert.equal(identityRoles.length, 5);
+  assert.equal(identityRoles.length, 7);
   assert.equal(identityRoles.filter(role => /foundry-source-/.test(role.scope)).length, 1);
   const [app] = ofType('Microsoft.App/containerApps');
   assert.equal(app.identity.type, 'UserAssigned');
@@ -287,6 +287,72 @@ test('links both Foundry projects to the shared Application Insights through pro
     assert.match(connection.properties.target, /Microsoft.Insights\/components/);
     assert.match(connection.dependsOn.join(' '), /Microsoft.Authorization\/roleAssignments/);
   }
+});
+
+test('orders both component-scoped Insights grants before each project connection without renaming Publisher', () => {
+  for (const name of ['source-foundry', 'consumer-foundry']) {
+    const compiled = moduleTemplate(name);
+    const roles = compiled.resources.filter(resource => resource.type === 'Microsoft.Authorization/roleAssignments');
+    const reader = roles.find(role => role.properties.roleDefinitionId.includes('43d0d8ad-25c7-4714-9337-8ba259a9fe05'));
+    const publisher = roles.find(role => role.properties.roleDefinitionId.includes('3913510d-42f4-4e42-8a64-420c390055eb'));
+    assert.ok(reader);
+    assert.equal(reader.scope, publisher.scope);
+    assert.match(reader.scope, /Microsoft.Insights\/components/);
+    assert.equal(reader.properties.principalId, publisher.properties.principalId);
+    assert.match(reader.properties.principalId, /Microsoft.CognitiveServices\/accounts\/projects.*identity.principalId/);
+    assert.equal(reader.properties.principalType, 'ServicePrincipal');
+    assert.match(publisher.name, /Monitoring Metrics Publisher/);
+    assert.match(publisher.name, /Microsoft.CognitiveServices\/accounts\/projects/);
+    const connection = compiled.resources.find(resource => resource.properties?.category === 'AppInsights');
+    assert.ok(connection.dependsOn.some(value => value.includes('Monitoring Reader')));
+    assert.ok(connection.dependsOn.some(value => value.includes('Monitoring Metrics Publisher')));
+  }
+});
+
+test('keeps directory deployment separate and mounts the gateway wrapper and pinned dependency manifest', () => {
+  assert.equal(JSON.stringify(template).includes('Microsoft.Graph/'), false);
+  assert.equal(template.parameters.gatewayAuthMode.defaultValue, 'api_key');
+  assert.equal(template.parameters.hostedAuthMode.defaultValue, 'api_key');
+  assert.equal(template.parameters.promptAuthMode.defaultValue, 'api_key');
+  assert.match(moduleNamed('consumer-model-connection').condition, /promptAuthMode.*api_key/);
+  const [gateway] = ofType('Microsoft.App/containerApps')[0].properties.template.containers;
+  assert.equal(gateway.command, "[if(equals(parameters('gatewayAuthMode'), 'entra'), createArray('python'), null())]");
+  assert.equal(gateway.args, "[if(equals(parameters('gatewayAuthMode'), 'entra'), createArray('/etc/litellm/serve.py'), createArray('--config', '/etc/litellm/config.yaml', '--host', '0.0.0.0', '--port', '4000'))]");
+  assert.equal(moduleTemplate('gateway-container-apps').parameters.gatewayAuthMode.defaultValue, 'api_key');
+  const mounts = ofType('Microsoft.App/containerApps')[0].properties.template.volumes[0].secrets;
+  for (const path of ['config.yaml', 'config.entra.yaml', 'entra_auth.py', 'gateway_app.py', 'serve.py', 'credential_context.py', 'requirements.txt']) {
+    assert.ok(mounts.some(item => item.path === path), path);
+  }
+  for (const name of ['LITELLM_AUTH_MODE', 'ENTRA_TENANT_ID', 'ENTRA_GATEWAY_CLIENT_ID',
+    'ENTRA_APP_PRINCIPALS', 'ENTRA_DELEGATED_USERS', 'ENTRA_DELEGATED_ACTORS', 'ENTRA_DELEGATED_ONLY']) {
+    assert.ok(gateway.env.some(item => item.name === name), name);
+  }
+  for (const [name, parameter] of [
+    ['ENTRA_APP_PRINCIPALS', 'entraAppPrincipals'], ['ENTRA_DELEGATED_USERS', 'entraDelegatedUsers'],
+    ['ENTRA_DELEGATED_ACTORS', 'entraDelegatedActors'],
+  ]) {
+    assert.equal(gateway.env.find(item => item.name === name).value, `[string(parameters('${parameter}'))]`);
+  }
+  // Bicep's string(false) is "False", which the gateway's strict policy parser rejects.
+  assert.equal(
+    gateway.env.find(item => item.name === 'ENTRA_DELEGATED_ONLY').value,
+    "[if(parameters('entraDelegatedOnly'), 'true', 'false')]",
+  );
+  assert.doesNotMatch(JSON.stringify(gateway), /pip install/);
+});
+
+test('supports ModelGateway OAuth2 only with an explicit secure credential, never project managed identity', () => {
+  const compiled = moduleTemplate('consumer-model-connection');
+  const oauth = compiled.resources.find(resource => resource.properties?.authType === 'OAuth2');
+  assert.ok(oauth);
+  assert.equal(oauth.properties.credentials.clientSecret, "[parameters('promptClientSecret')]");
+  assert.equal(compiled.parameters.promptClientSecret.type.toLowerCase(), 'securestring');
+  assert.equal(oauth.properties.scopes[0], "[format('api://{0}/.default', parameters('entraGatewayClientId'))]");
+  assert.match(oauth.properties.tokenUrl, /oauth2\/v2\.0\/token.*entraTenantId/);
+  assert.equal(oauth.properties.category, 'ModelGateway');
+  assert.equal(oauth.properties.credentials.key, undefined);
+  assert.equal(oauth.properties.useWorkspaceManagedIdentity, undefined);
+  assert.equal(JSON.stringify(template.outputs).includes('promptClientSecret'), false);
 });
 
 test('routes resource diagnostics to the shared workspace without collecting model request bodies', () => {

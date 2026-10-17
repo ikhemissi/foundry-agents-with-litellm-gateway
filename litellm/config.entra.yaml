@@ -1,0 +1,19 @@
+model_list:
+  - model_name: gpt-5.4-nano
+    litellm_params:
+      model: azure/gpt-5.4-nano
+      api_base: os.environ/AZURE_API_BASE
+      api_version: "2025-04-01-preview"
+
+litellm_settings:
+  enable_azure_ad_token_refresh: true
+  callbacks: ["otel"]
+  turn_off_message_logging: true
+  set_verbose: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  custom_auth: entra_auth.user_api_key_auth
+  disable_spend_logs: true
+  # Enforcement is explicit in custom_auth; no database-backed governance is implied.
+  custom_auth_run_common_checks: false

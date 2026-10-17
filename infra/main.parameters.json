@@ -22,6 +22,45 @@
     },
     "modelCapacity": {
       "value": "${MODEL_CAPACITY=10}"
+    },
+    "gatewayAuthMode": {
+      "value": "${GATEWAY_AUTH_MODE=api_key}"
+    },
+    "hostedAuthMode": {
+      "value": "${HOSTED_AUTH_MODE=api_key}"
+    },
+    "promptAuthMode": {
+      "value": "${PROMPT_AUTH_MODE=api_key}"
+    },
+    "litellmImage": {
+      "value": "${LITELLM_IMAGE=ghcr.io/berriai/litellm:v1.105.1}"
+    },
+    "entraTenantId": {
+      "value": "${ENTRA_TENANT_ID=}"
+    },
+    "entraGatewayClientId": {
+      "value": "${ENTRA_GATEWAY_CLIENT_ID=}"
+    },
+    "entraAgentClientId": {
+      "value": "${ENTRA_AGENT_CLIENT_ID=}"
+    },
+    "entraAgentPrincipalId": {
+      "value": "${ENTRA_AGENT_PRINCIPAL_ID=}"
+    },
+    "promptClientId": {
+      "value": "${ENTRA_PROMPT_CLIENT_ID=}"
+    },
+    "entraAppPrincipals": {
+      "value": "${ENTRA_APP_PRINCIPALS=[]}"
+    },
+    "entraDelegatedUsers": {
+      "value": "${ENTRA_DELEGATED_USERS=[]}"
+    },
+    "entraDelegatedActors": {
+      "value": "${ENTRA_DELEGATED_ACTORS=[]}"
+    },
+    "entraDelegatedOnly": {
+      "value": "${ENTRA_DELEGATED_ONLY=false}"
     }
   }
 }

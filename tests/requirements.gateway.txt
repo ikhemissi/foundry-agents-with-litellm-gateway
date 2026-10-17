@@ -1,0 +1,3 @@
+-r ../litellm/requirements.txt
+# LiteLLM's error classifier imports Prisma even when no database is configured.
+prisma==0.15.0

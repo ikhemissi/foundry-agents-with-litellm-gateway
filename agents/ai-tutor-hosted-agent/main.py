@@ -2,24 +2,158 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import ExitStack, asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
+from uuid import UUID
 
+import httpx
+import jwt
 from agent_framework import Agent
 from agent_framework.observability import enable_instrumentation
 from agent_framework.openai import OpenAIChatCompletionClient
-from agent_framework_foundry_hosting import ResponsesHostServer
+from agent_framework_foundry_hosting import HostedResponseRequest, ResponsesHostServer
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 from azure.monitor.opentelemetry import configure_azure_monitor
 from openai import AsyncOpenAI
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+log = logging.getLogger(__name__)
+FORWARDING_HEADER = b"x-client-litellm-authorization"
+
+
+@dataclass(repr=False)
+class ForwardedToken:
+    value: str
+    active: bool = True
+
+    def __repr__(self) -> str:
+        return "ForwardedToken(<redacted>)"
+
+
+forwarded_token: ContextVar[ForwardedToken | None] = ContextVar("forwarded_token", default=None)
+
+
+class RequestCredentialAuth(httpx.Auth):
+    def __init__(self, get_key: Callable[[], Awaitable[str]]) -> None:
+        self.get_key = get_key
+
+    async def async_auth_flow(
+        self, request: httpx.Request,
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        request.headers["Authorization"] = f"Bearer {await self.get_key()}"
+        try:
+            yield request
+        finally:
+            request.headers.pop("Authorization", None)
+
+
+def create_openai_client(
+    base_url: str, get_key: Callable[[], Awaitable[str]],
+) -> AsyncOpenAI:
+    return AsyncOpenAI(
+        base_url=base_url, api_key="request-local-credential", max_retries=0,
+        http_client=httpx.AsyncClient(
+            follow_redirects=False, auth=RequestCredentialAuth(get_key),
+        ),
+    )
+
+
+class DelegatedTokenBoundary:
+    def __init__(self, app: ASGIApp, mode: str) -> None:
+        self.app, self.mode = app, mode
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = scope.get("headers", [])
+        values = [v for k, v in headers if k.lower() == FORWARDING_HEADER]
+        clean_scope = dict(scope)
+        clean_scope["headers"] = [(k, v) for k, v in headers if k.lower() != FORWARDING_HEADER]
+        token = None
+        if self.mode == "entra_delegated" and len(values) == 1:
+            scheme, separator, value = values[0].partition(b" ")
+            if scheme.lower() == b"bearer" and separator and 0 < len(value) <= 32_768:
+                try:
+                    token = ForwardedToken(value.decode("ascii"))
+                except UnicodeDecodeError:
+                    token = None
+        if self.mode == "entra_delegated" and scope["method"] == "POST" and token is None:
+            await send({
+                "type": "http.response.start", "status": 401,
+                "headers": [(b"content-type", b"application/json")],
+            })
+            await send({"type": "http.response.body", "body": b'{"error":"Delegated gateway token required."}'})
+            return
+        context = forwarded_token.set(token)
+        try:
+            await self.app(clean_scope, receive, send)
+        finally:
+            if token is not None:
+                token.active, token.value = False, ""
+            forwarded_token.reset(context)
+
+
+def prepare_options(
+    request: HostedResponseRequest, options: dict[str, Any],
+) -> dict[str, Any]:
+    if forwarded_token.get() is not None and request.request.get("background"):
+        raise ValueError("Delegated inference must run in the foreground of its authenticated request.")
+    if "include" in options:
+        options.pop("include")
+        log.warning("Responses include projections are unsupported by Chat Completions.")
+    return options
+
+
+def auth_mode() -> str:
+    # No default: the legacy API-key mode must be chosen explicitly.
+    mode = os.environ.get("LITELLM_AUTH_MODE")
+    if mode not in ("api_key", "entra", "entra_delegated"):
+        raise ValueError("LITELLM_AUTH_MODE must be set to api_key, entra, or entra_delegated.")
+    return mode
+
+
+async def delegated_key() -> str:
+    token = forwarded_token.get()
+    if token is None or not token.active or not token.value:
+        raise RuntimeError("No active delegated gateway token; credential fallback is prohibited.")
+    return token.value
+
+
+async def application_key(credential: DefaultAzureCredential) -> str:
+    client_id = str(UUID(os.environ["ENTRA_AGENT_CLIENT_ID"]))
+    principal_id = str(UUID(os.environ["ENTRA_AGENT_PRINCIPAL_ID"]))
+    scope = os.environ["ENTRA_GATEWAY_SCOPE"]
+    if not scope.startswith("api://") or not scope.endswith("/.default"):
+        raise ValueError("ENTRA_GATEWAY_SCOPE must be api://<gateway-client-id>/.default.")
+    UUID(scope.removeprefix("api://").removesuffix("/.default"))
+    result = await asyncio.to_thread(credential.get_token, scope)
+    # This is a client-side identity consistency guard, NOT token authentication.
+    # The gateway verifies the signature, issuer, audience, time and authorization.
+    try:
+        claims = jwt.decode(result.token, options={"verify_signature": False})
+        if (
+            claims.get("azp") != client_id or claims.get("oid") != principal_id
+            or claims.get("idtyp") != "app"
+            or "11" not in str(claims.get("xms_act_fct", "")).split()
+        ):
+            raise ValueError()
+    except (jwt.PyJWTError, ValueError):
+        raise RuntimeError("Credential did not return the configured Entra Agent ID.") from None
+    return result.token
 
 
 def create_agent(
     base_url: str,
-    get_api_key: Callable[[], Awaitable[str]],
     definition_path: Path = Path(__file__).with_name("agent.json"),
+    *,
+    async_client: AsyncOpenAI,
 ) -> Agent:
     endpoint = urlparse(base_url)
     if (
@@ -38,7 +172,7 @@ def create_agent(
             raise ValueError(f"agent.json requires a nonempty {field}.")
     client = OpenAIChatCompletionClient(
         model=definition["model"],
-        async_client=AsyncOpenAI(base_url=base_url, api_key=get_api_key),
+        async_client=async_client,
     )
     return Agent(
         client=client,
@@ -55,13 +189,34 @@ async def read_gateway_key(vault: SecretClient) -> str:
     return secret.value
 
 
+def create_server(agent: Agent, client: AsyncOpenAI, mode: str) -> ResponsesHostServer:
+    server = ResponsesHostServer(
+        agent, configure_observability=None, prepare_options=prepare_options,
+    )
+    server.add_middleware(DelegatedTokenBoundary, mode=mode)
+    previous_lifespan = server.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(app: Any) -> AsyncGenerator[None]:
+        try:
+            async with previous_lifespan(app):
+                yield
+        finally:
+            await client.close()
+
+    server.router.lifespan_context = lifespan
+    return server
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
-    with DefaultAzureCredential() as credential, SecretClient(
-        vault_url=f"https://{os.environ['AZURE_KEY_VAULT_NAME']}.vault.azure.net",
-        credential=credential,
-    ) as vault:
+    os.environ["OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS"] = (
+        "authorization,api-key,x-client-.*,.*token.*,.*secret.*"
+    )
+    mode = auth_mode()
+    with ExitStack() as stack:
+        credential = stack.enter_context(DefaultAzureCredential())
         configure_azure_monitor(
             connection_string=os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"],
             credential=credential,
@@ -69,12 +224,27 @@ def main() -> None:
         )
         enable_instrumentation(enable_sensitive_data=False, enable_message_events=False)
 
-        async def get_api_key() -> str:
-            return await read_gateway_key(vault)
+        if mode == "api_key":
+            vault = stack.enter_context(SecretClient(
+                vault_url=f"https://{os.environ['AZURE_KEY_VAULT_NAME']}.vault.azure.net",
+                credential=credential,
+            ))
 
-        agent = create_agent(os.environ["LITELLM_BASE_URL"], get_api_key)
-        # Keep the explicit Entra-authenticated exporter; do not configure it twice.
-        ResponsesHostServer(agent, configure_observability=None).run()
+            async def get_credential() -> str:
+                return await read_gateway_key(vault)
+        elif mode == "entra":
+            async def get_credential() -> str:
+                return await application_key(credential)
+        else:
+            get_credential = delegated_key
+        client = create_openai_client(os.environ["LITELLM_BASE_URL"], get_credential)
+        try:
+            agent = create_agent(os.environ["LITELLM_BASE_URL"], async_client=client)
+            # Keep the explicit Entra-authenticated exporter; do not configure it twice.
+            create_server(agent, client, mode).run()
+        finally:
+            if not client.is_closed():
+                asyncio.run(client.close())
 
 
 if __name__ == "__main__":

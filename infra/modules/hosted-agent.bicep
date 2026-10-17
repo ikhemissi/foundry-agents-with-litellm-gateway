@@ -11,6 +11,9 @@ param agentPrincipalId string
 param keyVaultName string
 param appInsightsName string
 
+@allowed(['api_key', 'entra', 'entra_delegated'])
+param hostedAuthMode string = 'api_key'
+
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
 }
@@ -24,7 +27,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: appInsightsName
 }
 
-resource gatewayKeyReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource gatewayKeyReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (hostedAuthMode == 'api_key') {
   name: guid(gatewayKey.id, agentPrincipalId, 'Key Vault Secrets User')
   scope: gatewayKey
   properties: {

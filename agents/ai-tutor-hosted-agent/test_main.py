@@ -6,28 +6,22 @@ from unittest.mock import Mock, patch
 
 from azure.core.exceptions import HttpResponseError
 from azure.keyvault.secrets import KeyVaultSecret, SecretClient
+from openai import AsyncOpenAI
 
 from main import create_agent, main, read_gateway_key
-
-
-async def gateway_key() -> str:
-    return "test-key"
 
 
 class AgentTests(unittest.TestCase):
     def test_uses_litellm_chat_completions_and_its_own_tutor_definition(self) -> None:
         definition = json.loads(Path(__file__).with_name("agent.json").read_text())
         with (
-            patch("main.AsyncOpenAI", autospec=True) as openai,
             patch("main.OpenAIChatCompletionClient", autospec=True) as chat,
             patch("main.Agent", autospec=True) as agent,
         ):
-            result = create_agent("https://gateway.example/v1", gateway_key)
-        openai.assert_called_once_with(
-            base_url="https://gateway.example/v1", api_key=gateway_key
-        )
+            openai = Mock(spec=AsyncOpenAI)
+            result = create_agent("https://gateway.example/v1", async_client=openai)
         chat.assert_called_once_with(
-            model="gpt-5.4-nano", async_client=openai.return_value
+            model="gpt-5.4-nano", async_client=openai
         )
         agent.assert_called_once_with(
             client=chat.return_value,
@@ -45,7 +39,7 @@ class AgentTests(unittest.TestCase):
             "https:///v1",
         ):
             with self.subTest(url=url), self.assertRaises(ValueError):
-                create_agent(url, gateway_key)
+                create_agent(url, async_client=Mock(spec=AsyncOpenAI))
 
     def test_rejects_missing_definition_fields(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -59,11 +53,12 @@ class AgentTests(unittest.TestCase):
                 definition[field] = ""
                 path.write_text(json.dumps(definition))
                 with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
-                    create_agent("https://gateway.example/v1", gateway_key, path)
+                    create_agent("https://gateway.example/v1", path, async_client=Mock(spec=AsyncOpenAI))
 
     def test_configures_one_entra_authenticated_exporter_without_message_capture(self) -> None:
         with (
             patch.dict("os.environ", {
+                "LITELLM_AUTH_MODE": "api_key",
                 "AZURE_KEY_VAULT_NAME": "test-vault",
                 "LITELLM_BASE_URL": "https://gateway.example/v1",
                 "APPLICATIONINSIGHTS_CONNECTION_STRING": "test-connection",
@@ -73,7 +68,8 @@ class AgentTests(unittest.TestCase):
             patch("main.configure_azure_monitor") as monitor,
             patch("main.enable_instrumentation") as instrumentation,
             patch("main.create_agent") as agent,
-            patch("main.ResponsesHostServer", autospec=True) as server,
+            patch("main.create_openai_client") as client,
+            patch("main.create_server") as server,
         ):
             main()
         monitor.assert_called_once_with(
@@ -85,9 +81,43 @@ class AgentTests(unittest.TestCase):
             enable_sensitive_data=False, enable_message_events=False
         )
         server.assert_called_once_with(
-            agent.return_value, configure_observability=None
+            agent.return_value, client.return_value, "api_key"
         )
         server.return_value.run.assert_called_once()
+
+    def test_requires_an_explicit_authentication_mode(self) -> None:
+        for value in (None, "", "API_KEY", "key"):
+            env = {"LITELLM_BASE_URL": "https://gateway.example/v1"}
+            if value is not None:
+                env["LITELLM_AUTH_MODE"] = value
+            with (
+                self.subTest(value=value),
+                patch.dict("os.environ", env, clear=True),
+                patch("main.DefaultAzureCredential", autospec=True) as credential,
+                self.assertRaisesRegex(ValueError, "LITELLM_AUTH_MODE"),
+            ):
+                main()
+            credential.assert_not_called()
+
+    def test_entra_modes_do_not_construct_a_vault_client(self) -> None:
+        for mode in ("entra", "entra_delegated"):
+            with (
+                self.subTest(mode=mode),
+                patch.dict("os.environ", {
+                    "LITELLM_AUTH_MODE": mode,
+                    "LITELLM_BASE_URL": "https://gateway.example/v1",
+                    "APPLICATIONINSIGHTS_CONNECTION_STRING": "test-connection",
+                }),
+                patch("main.DefaultAzureCredential", autospec=True),
+                patch("main.SecretClient", autospec=True) as vault,
+                patch("main.configure_azure_monitor"),
+                patch("main.enable_instrumentation"),
+                patch("main.create_agent"),
+                patch("main.create_openai_client"),
+                patch("main.create_server"),
+            ):
+                main()
+                vault.assert_not_called()
 
 
 class CredentialTests(unittest.IsolatedAsyncioTestCase):

@@ -27,6 +27,11 @@ test('uses native Python code deployment, with no model deployment or secret in 
   assert.doesNotMatch(manifest, /LITELLM_MASTER_KEY|OPENAI_API_KEY|deployments:/);
   assert.match(manifest, /--query versions\.latest\.instance_identity\.principal_id/);
   assert.match(manifest, /--template-file infra\/modules\/hosted-agent\.bicep/);
+  assert.match(manifest, /hostedAuthMode="\$\{HOSTED_AUTH_MODE:-api_key\}"/);
+  assert.match(manifest, /LITELLM_AUTH_MODE: \$\{HOSTED_AUTH_MODE=api_key\}/);
+  assert.match(manifest, /ENTRA_GATEWAY_SCOPE: \$\{ENTRA_GATEWAY_SCOPE\}/);
+  assert.match(manifest, /ENTRA_AGENT_CLIENT_ID: \$\{ENTRA_AGENT_CLIENT_ID\}/);
+  assert.match(manifest, /ENTRA_AGENT_PRINCIPAL_ID: \$\{ENTRA_AGENT_PRINCIPAL_ID\}/);
   assert.doesNotMatch(manifest, /deploy-hosted-agent-access/);
 });
 
@@ -45,9 +50,15 @@ test('declares only secret-scoped read and component-scoped publishing for the h
     role.properties.roleDefinitionId.includes('4633458b-17de-408a-b874-0445c86b69e6'));
   assert.match(reader.scope, /Microsoft\.KeyVault\/vaults\/secrets/);
   assert.match(reader.scope, /litellm-master-key/);
+  assert.equal(template.parameters.hostedAuthMode.defaultValue, 'api_key');
+  assert.deepEqual(template.parameters.hostedAuthMode.allowedValues, ['api_key', 'entra', 'entra_delegated']);
+  assert.equal(reader.condition, "[equals(parameters('hostedAuthMode'), 'api_key')]");
+  assert.match(reader.name, /Key Vault Secrets User/);
   const publisher = roles.find(role =>
     role.properties.roleDefinitionId.includes('3913510d-42f4-4e42-8a64-420c390055eb'));
   assert.match(publisher.scope, /Microsoft\.Insights\/components/);
+  assert.equal(publisher.condition, undefined);
+  assert.match(publisher.name, /Monitoring Metrics Publisher/);
 });
 
 test('provides workspace-root debug settings using the hosted agent virtual environment', () => {

@@ -1,0 +1,2 @@
+litellm[proxy]==1.105.1
+PyJWT[crypto]==2.15.1

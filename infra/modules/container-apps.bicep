@@ -10,6 +10,14 @@ param sourceOpenAIEndpoint string
 param masterKeySecretUri string
 param workspaceId string
 param appInsightsConnectionString string
+@allowed(['api_key', 'entra'])
+param gatewayAuthMode string = 'api_key'
+param entraTenantId string = ''
+param entraGatewayClientId string = ''
+param entraAppPrincipals array = []
+param entraDelegatedUsers array = []
+param entraDelegatedActors array = []
+param entraDelegatedOnly bool = false
 
 resource environment 'Microsoft.App/managedEnvironments@2025-01-01' = {
   name: 'cae-litellm-${suffix}'
@@ -67,6 +75,36 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
           #disable-next-line use-secure-value-for-secure-inputs
           value: loadTextContent('../../monitoring/otel-collector.yaml')
         }
+        {
+          name: 'entra-auth'
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../litellm/entra_auth.py')
+        }
+        {
+          name: 'gateway-app'
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../litellm/gateway_app.py')
+        }
+        {
+          name: 'gateway-serve'
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../litellm/serve.py')
+        }
+        {
+          name: 'gateway-requirements'
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../litellm/requirements.txt')
+        }
+        {
+          name: 'credential-context'
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../litellm/credential_context.py')
+        }
+        {
+          name: 'litellm-entra-config'
+          #disable-next-line use-secure-value-for-secure-inputs
+          value: loadTextContent('../../litellm/config.entra.yaml')
+        }
       ]
     }
     template: {
@@ -74,7 +112,8 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
         {
           name: 'litellm'
           image: litellmImage
-          args: [
+          command: gatewayAuthMode == 'entra' ? ['python'] : null
+          args: gatewayAuthMode == 'entra' ? ['/etc/litellm/serve.py'] : [
             '--config'
             '/etc/litellm/config.yaml'
             '--host'
@@ -83,6 +122,14 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
             '4000'
           ]
           env: [
+            { name: 'LITELLM_AUTH_MODE', value: gatewayAuthMode }
+            { name: 'ENTRA_TENANT_ID', value: entraTenantId }
+            { name: 'ENTRA_GATEWAY_CLIENT_ID', value: entraGatewayClientId }
+            { name: 'ENTRA_APP_PRINCIPALS', value: string(entraAppPrincipals) }
+            { name: 'ENTRA_DELEGATED_USERS', value: string(entraDelegatedUsers) }
+            { name: 'ENTRA_DELEGATED_ACTORS', value: string(entraDelegatedActors) }
+            { name: 'ENTRA_DELEGATED_ONLY', value: entraDelegatedOnly ? 'true' : 'false' }
+            { name: 'PYTHONPATH', value: '/etc/litellm' }
             {
               name: 'AZURE_CLIENT_ID'
               value: gatewayClientId
@@ -210,6 +257,12 @@ resource gateway 'Microsoft.App/containerApps@2025-01-01' = {
               secretRef: 'litellm-config'
               path: 'config.yaml'
             }
+            { secretRef: 'entra-auth', path: 'entra_auth.py' }
+            { secretRef: 'gateway-app', path: 'gateway_app.py' }
+            { secretRef: 'gateway-serve', path: 'serve.py' }
+            { secretRef: 'gateway-requirements', path: 'requirements.txt' }
+            { secretRef: 'credential-context', path: 'credential_context.py' }
+            { secretRef: 'litellm-entra-config', path: 'config.entra.yaml' }
           ]
         }
         {
