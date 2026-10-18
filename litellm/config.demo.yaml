@@ -15,6 +15,12 @@ agents:
       version: "1.0.0"
       # Pin the wire format: the gateway then serves and expects A2A 1.0 only.
       protocolVersion: "1.0"
+      # Foundry's A2A 1.0 client rejects a card without supportedInterfaces. LiteLLM
+      # replaces the first interface URL with the gateway's own URL when it serves the card.
+      supportedInterfaces:
+        - url: http://demo-a2a/
+          protocolBinding: JSONRPC
+          protocolVersion: "1.0"
       capabilities:
         streaming: false
       defaultInputModes: [text]

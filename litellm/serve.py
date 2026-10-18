@@ -36,7 +36,11 @@ def main() -> None:
     os.environ["CONFIG_FILE_PATH"] = str(Path(__file__).with_name(config))
     from litellm.proxy.proxy_server import app
 
-    uvicorn.run(CredentialBoundary(app, mode), host="0.0.0.0", port=4000, access_log=False)
+    # Only the Container Apps ingress can reach this port. Trusting its X-Forwarded-* headers makes
+    # LiteLLM build https:// public URLs (the A2A agent card), which Foundry requires.
+    uvicorn.run(
+        CredentialBoundary(app, mode), host="0.0.0.0", port=4000, access_log=False, forwarded_allow_ips="*"
+    )
 
 
 if __name__ == "__main__":

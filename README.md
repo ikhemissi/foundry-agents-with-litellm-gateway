@@ -488,8 +488,9 @@ The tutor asks the learner what they want to learn, how deep to go and how they 
 learn, offers a learning mode, teaches one section at a time at the chosen depth, and
 offers a quiz at the end of each section. It must not state quiz answers itself.
 Learner progress is **not stored yet**; durable memory is a planned next step.
-Only the **hosted** tutor uses these tools. The prompt tutor does not: reaching them
-through a Foundry toolbox has not been built or tested here.
+Only the **hosted** tutor uses these tools in this repo. A time-boxed spike (see
+[Prompt agents and Foundry tools](#prompt-agents-and-foundry-tools-spike-findings)) showed
+that a Foundry prompt agent can reach the same backends through the gateway, with caveats.
 
 **Access is per approved application, not per key.** `ENTRA_CAPABILITIES` maps an approved
 principal's object ID to the MCP servers (with a per-tool allowlist) and A2A agents it may
@@ -539,6 +540,30 @@ learner id first. Azure Functions can host MCP servers (the MCP extension), but 
 released A2A support there, so both backends use Container Apps. The gateway logs one
 `Error listing tools` warning at startup if it starts before the backends do; calls worked
 afterwards in testing.
+
+### Prompt agents and Foundry tools: spike findings
+
+A throwaway prompt agent, a Foundry toolbox and `RemoteTool`/`RemoteA2A` project connections
+with `AgenticIdentityToken` auth (audience `api://<gateway client id>`) were pointed at this
+gateway, then deleted. The spike scripts are not part of this repo. Observed live:
+
+| Question | Finding |
+| --- | --- |
+| Which identity does the gateway see for tools? | The **prompt agent's own instance identity** (`oid` = `azp`, `idtyp` app), a distinct one **per agent**. Model calls arrive separately as the ModelGateway OAuth2 client. Each agent identity must be added to `ENTRA_APP_PRINCIPALS` and `ENTRA_CAPABILITIES` before it can use tools. |
+| Can the toolbox be probed with a developer token? | No. An `AgenticIdentityToken` connection needs an agent identity context, so `tools/list` with a user token fails. Only an agent run exercises it. |
+| MCP through the toolbox | **Works.** The model (through LiteLLM) chose a tool, Foundry ran it against the gateway and returned the result. Tool names are prefixed (`curriculum___curriculum-list_topics`). The MCP client also sends `DELETE` to close sessions; the route policy denies it with 403, which is harmless. |
+| A2A through the toolbox | **Does not work with the gateway's protected agent card.** The toolbox rejects an A2A tool that sets both `base_url` and `project_connection_id`, and without `base_url` it fetches the card anonymously (`reason=no_token`), so `send_credentials_for_agent_card` has no effect. |
+| A2A as a direct agent tool (no toolbox) | **Works end to end** with `base_url` plus `project_connection_id` and `send_credentials_for_agent_card: true`: authenticated card fetch, one `SendMessage` with a 1.x `A2A-Version`, and the quiz agent's structured reply. |
+| Failure behaviour | A tool source that fails (403, 401, bad card) makes the **whole request return 400**, so one broken tool takes down the agent's plain answers too. A misconfigured source was silently left out of the tool list once. |
+
+Gateway and setup requirements the spike exposed (the first two are fixed in this repo):
+
+- The agent card must contain `supportedInterfaces` (Foundry's A2A 1.0 parser requires it), and its URL must be **https**. The gateway now serves both: [config.demo.yaml](litellm/config.demo.yaml) declares the interface and [serve.py](litellm/serve.py) trusts the ingress `X-Forwarded-*` headers so the public URL is `https://`.
+- Config and Python sources reach the gateway as mounted secrets, so changing them with `azd provision` does **not** create a revision: restart the active revision (`az containerapp revision restart`).
+- The A2A connection `target` needs a **trailing slash** (`.../a2a/quiz_master/`), otherwise Foundry resolves the card at `/a2a/.well-known/agent-card.json`.
+- The MCP protocol version Foundry requires is `2025-11-25`.
+- Foundry's A2A tool lets the model write free text. `quiz_master` only accepts a JSON action message, so a prompt agent needs instructions that spell out the exact JSON (it worked when told to), or the quiz agent needs a natural-language front door.
+- Not done: A2A through a toolbox with an anonymous card (needs a deliberate gateway policy exception), approvals (`require_approval: always`), and a user-on-agent or delegated token.
 
 ## Shared monitoring
 
@@ -627,11 +652,12 @@ sample environment. Nothing else here is claimed as Azure-verified.
 | Curriculum MCP server and `quiz_master` A2A 1.0 agent (internal apps, stock LiteLLM image) behind the gateway; hosted tutor with `GATEWAY_TOOLS=enabled` (agent version 5, then the short-id build) | Tutor listed learning modes and topics, followed the chosen mode, created a quiz through A2A (`A2A-Version: 1.0`, `SendMessage`) and graded it on the next turn with the exact short quiz id: score, per-question explanations and feedback returned |
 | Quiz agent's own managed identity (no Azure RBAC) calling the gateway for question rewording and feedback | Allowed for inference only (`oid` = quiz identity); the gateway audit trail shows tutor identity on `mcp`/`a2a` routes and quiz identity on `inference` |
 | First-version ~170-character quiz id | Failed live: the tutor model corrupted the id while copying it. Replaced by the 24-character id; the re-test passed |
+| Throwaway prompt agent using the gateway's MCP tools through a Foundry toolbox, and the A2A quiz agent as a direct agent tool (spike, resources deleted afterwards) | MCP via toolbox and A2A direct worked end to end under the agents' own identities; A2A via toolbox did not (see the spike findings) |
 | Unauthenticated calls to `/mcp/curriculum`, `/a2a/quiz_master`, the agent card, `/v1/chat/completions` | 401 each; `/v1/models`, `/ui`, `/openapi.json` 403; liveness 200; non-POST `GET /mcp/curriculum` denied by route policy |
 | Prompt-client token (approved for inference only) on MCP, A2A, agent card | 403 on all three; inference still 200; master key 401; MCP REST and `/v1/agents` 403 |
 | Telemetry scan after the tool calls (466 records, gateway and hosted agent) | No JWTs, bearer headers, master key, prompt secret or forwarding header |
 
-**Not verified:** the prompt tutor using MCP/A2A through a Foundry toolbox, MCP/A2A with real third-party backends or Entra-protected backends, a user-via-agent token reaching tools (denied by policy; untested live), Azure Functions-hosted backends, delegated (`entra_delegated`) operation (it needs a trusted
+**Not verified:** A2A through a Foundry toolbox with an anonymous card, tool approvals, MCP/A2A with real third-party backends or Entra-protected backends, a user-via-agent token reaching tools (denied by policy; untested live), Azure Functions-hosted backends, delegated (`entra_delegated`) operation (it needs a trusted
 sign-in/OBO backend, consent and approved human/actor IDs that do not exist
 here), registration *adoption* of pre-existing applications, other tenants,
 Foundry portal Insights rendering with the new reader role, and Agent ID

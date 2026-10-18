@@ -342,6 +342,15 @@ class QuizThroughGatewayTests(unittest.IsolatedAsyncioTestCase):
             legacy = client.get(url.replace("agent-card", "agent"), headers=headers(token(HOSTED)))
         self.assertEqual(card.status_code, 200, card.text)
         self.assertEqual(card.json()["name"], "quiz_master")
+        interface = card.json()["supportedInterfaces"][0]
+        self.assertEqual(interface["url"], f"{proxy()}/a2a/quiz_master")
+        with httpx.Client(timeout=30) as client:
+            behind_ingress = client.get(url, headers={**headers(token(HOSTED)), "X-Forwarded-Proto": "https"})
+        self.assertEqual(
+            behind_ingress.json()["supportedInterfaces"][0]["url"],
+            f"{proxy().replace('http://', 'https://', 1)}/a2a/quiz_master",
+        )
+        self.assertEqual((interface["protocolBinding"], interface["protocolVersion"]), ("JSONRPC", "1.0"))
         self.assertEqual(legacy.status_code, 403)
 
     def test_the_callers_credential_is_never_forwarded_to_backends(self) -> None:
