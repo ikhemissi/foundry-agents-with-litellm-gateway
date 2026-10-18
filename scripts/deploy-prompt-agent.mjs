@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { definitionMatches, resolvePromptAgent } from './prompt-tools.mjs';
 
 export async function deployPromptAgent({
   endpoint, agent, token, fetchImpl = fetch,
@@ -51,7 +51,7 @@ export async function deployPromptAgent({
     return response.json();
   }
   const matches = version => version?.description === desired.description
-    && isDeepStrictEqual(version.definition, desired.definition);
+    && definitionMatches(version.definition, desired.definition);
   const current = await request(`${base}?api-version=v1`);
   if (matches(current?.versions?.latest)) {
     return { ...current.versions.latest, changed: false };
@@ -80,12 +80,25 @@ async function main() {
     '--subscription', subscriptionId,
     '--query', 'accessToken', '--output', 'tsv',
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
+  let armToken = '';
+  if (process.env.PROMPT_TOOLS === 'enabled') {
+    armToken = execFileSync('az', [
+      'account', 'get-access-token',
+      '--scope', 'https://management.azure.com/.default',
+      '--subscription', subscriptionId,
+      '--query', 'accessToken', '--output', 'tsv',
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
+  }
+  const desired = await resolvePromptAgent({
+    agent, env: process.env, foundryToken: token, armToken,
+  });
   const result = await deployPromptAgent({
     endpoint: process.env.CONSUMER_FOUNDRY_PROJECT_ENDPOINT,
-    agent,
+    agent: desired,
     token,
   });
-  console.log(`${result.changed ? 'Deployed' : 'Unchanged'}: ${agent.name}, version ${result.version}, model ${result.definition.model}`);
+  const tools = result.definition.tools?.length ?? 0;
+  console.log(`${result.changed ? 'Deployed' : 'Unchanged'}: ${agent.name}, version ${result.version}, model ${result.definition.model}, ${tools} tool(s)`);
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

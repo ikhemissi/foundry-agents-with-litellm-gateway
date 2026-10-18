@@ -53,6 +53,12 @@ export function validateAuthConfig(env) {
   if (env.ENABLE_DEMO_BACKENDS !== undefined && !['true', 'false'].includes(env.ENABLE_DEMO_BACKENDS)) {
     throw new Error('ENABLE_DEMO_BACKENDS must be exactly true or false.');
   }
+  if (env.PROMPT_TOOLS !== undefined && !['enabled', 'disabled'].includes(env.PROMPT_TOOLS)) {
+    throw new Error('PROMPT_TOOLS must be exactly enabled or disabled.');
+  }
+  if (env.PROMPT_TOOLS === 'enabled' && env.ENABLE_DEMO_BACKENDS !== 'true') {
+    throw new Error('PROMPT_TOOLS=enabled requires ENABLE_DEMO_BACKENDS=true.');
+  }
   const capabilities = readCapabilities(env);
   if (env.ENABLE_DEMO_BACKENDS === 'true' && gateway !== 'entra') {
     throw new Error('Demo backends are only registered in the Entra gateway config.');

@@ -488,9 +488,8 @@ The tutor asks the learner what they want to learn, how deep to go and how they 
 learn, offers a learning mode, teaches one section at a time at the chosen depth, and
 offers a quiz at the end of each section. It must not state quiz answers itself.
 Learner progress is **not stored yet**; durable memory is a planned next step.
-Only the **hosted** tutor uses these tools in this repo. A time-boxed spike (see
-[Prompt agents and Foundry tools](#prompt-agents-and-foundry-tools-spike-findings)) showed
-that a Foundry prompt agent can reach the same backends through the gateway, with caveats.
+The hosted tutor uses these tools when `GATEWAY_TOOLS=enabled`; the prompt tutor uses them
+when `PROMPT_TOOLS=enabled` (see [Prompt tutor tools](#prompt-tutor-tools-optional)).
 
 **Access is per approved application, not per key.** `ENTRA_CAPABILITIES` maps an approved
 principal's object ID to the MCP servers (with a per-tool allowlist) and A2A agents it may
@@ -540,6 +539,43 @@ learner id first. Azure Functions can host MCP servers (the MCP extension), but 
 released A2A support there, so both backends use Container Apps. The gateway logs one
 `Error listing tools` warning at startup if it starts before the backends do; calls worked
 afterwards in testing.
+
+### Prompt tutor tools (optional)
+
+`PROMPT_TOOLS=enabled` makes [deploy-prompt-agent.mjs](scripts/deploy-prompt-agent.mjs) (run by the
+`postprovision` and `postdeploy` hooks) give the Foundry prompt agent the same two backends:
+
+- the **curriculum MCP server** through a Foundry **toolbox** (`tutor-tools`, MCP tool pointing at
+  the gateway's `/mcp/curriculum`), reached by the agent through a `UserEntraToken` connection;
+- the **quiz agent** as a **direct A2A tool** (`/a2a/quiz_master/`, A2A 1.0, card credentials sent).
+  A toolbox cannot carry it: Foundry fetches a toolbox A2A card anonymously and the gateway protects it.
+
+The script creates the three project connections (`gateway-mcp`, `gateway-a2a`, `tutor-tools-conn`),
+the toolbox, and a new agent version whose instructions swap the "no external tools" sentence for
+tool guidance (it spells out the exact JSON the quiz agent expects, because Foundry lets the model
+write free text). Everything is idempotent: unchanged resources are not rewritten and no new
+agent version is created when nothing changed.
+
+The gateway sees the prompt agent's **own agent identity** (not the OAuth client the model calls
+use), so that identity must be approved first. **Tools are only attached once it is approved**;
+until then the plain tutor is deployed and the script prints what to do. This matters because a
+tool that Foundry cannot reach (gateway denial, outage) makes the **whole request fail with 400**,
+not just the tool call.
+
+```bash
+azd env set ENABLE_DEMO_BACKENDS true                 # backends must exist (see above)
+azd env set PROMPT_TOOLS enabled
+azd deploy ai-tutor-hosted-agent                      # or any deploy: the hook runs and prints the agent identity
+# approve that identity, keeping the hosted agent's existing entries:
+azd env set ENTRA_APP_PRINCIPALS '[...existing..., {"oid":"<id>","azp":"<id>"}]'
+azd env set ENTRA_CAPABILITIES '{...existing..., "<id>":{"mcp":{"curriculum":["list_topics","get_topic","get_section","list_learning_modes"]},"agents":["quiz_master"]}}'
+LITELLM_MASTER_KEY="$(az keyvault secret show --vault-name "$(azd env get-value AZURE_KEY_VAULT_NAME)" --name litellm-master-key --query value -o tsv)" azd provision
+az containerapp revision restart ...                  # only needed when gateway config files changed
+```
+
+The operator needs Foundry Project Manager (to create connections) and Foundry User on the consumer project.
+To remove the tools set `PROMPT_TOOLS=disabled` and deploy again; the connections and toolbox
+are left in place (delete them in the portal or with the ARM/Foundry APIs if unwanted).
 
 ### Prompt agents and Foundry tools: spike findings
 
@@ -653,6 +689,7 @@ sample environment. Nothing else here is claimed as Azure-verified.
 | Quiz agent's own managed identity (no Azure RBAC) calling the gateway for question rewording and feedback | Allowed for inference only (`oid` = quiz identity); the gateway audit trail shows tutor identity on `mcp`/`a2a` routes and quiz identity on `inference` |
 | First-version ~170-character quiz id | Failed live: the tutor model corrupted the id while copying it. Replaced by the 24-character id; the re-test passed |
 | Throwaway prompt agent using the gateway's MCP tools through a Foundry toolbox, and the A2A quiz agent as a direct agent tool (spike, resources deleted afterwards) | MCP via toolbox and A2A direct worked end to end under the agents' own identities; A2A via toolbox did not (see the spike findings) |
+| Production prompt tutor with `PROMPT_TOOLS=enabled` (agent version 2: toolbox MCP tool plus direct A2A tool), its own agent identity approved on the gateway | Plain answers unchanged; listed topics and learning modes from the catalogue; created and graded a quiz (3/3). Gateway audit: that identity made the `mcp`, `a2a_card` and `SendMessage` calls, only session-close `DELETE`s denied; re-running the hook made no new version; telemetry had no JWTs or bearer headers (the quiz id appears in conversation content) |
 | Unauthenticated calls to `/mcp/curriculum`, `/a2a/quiz_master`, the agent card, `/v1/chat/completions` | 401 each; `/v1/models`, `/ui`, `/openapi.json` 403; liveness 200; non-POST `GET /mcp/curriculum` denied by route policy |
 | Prompt-client token (approved for inference only) on MCP, A2A, agent card | 403 on all three; inference still 200; master key 401; MCP REST and `/v1/agents` 403 |
 | Telemetry scan after the tool calls (466 records, gateway and hosted agent) | No JWTs, bearer headers, master key, prompt secret or forwarding header |
