@@ -1,0 +1,288 @@
+{
+  "id": "fractions",
+  "title": "Fractions",
+  "summary": "Understand, simplify, add, subtract, multiply and divide fractions.",
+  "prerequisites": [],
+  "sections": [
+    {
+      "id": "fractions-basics",
+      "title": "Fraction basics: equivalent and simplest form",
+      "summary": "Different fractions can name the same amount; simplifying finds the smallest names.",
+      "prerequisites": [],
+      "objectives": [
+        {"id": "frac.equivalent", "statement": "Build equivalent fractions by multiplying or dividing top and bottom by the same number."},
+        {"id": "frac.simplify", "statement": "Simplify a fraction to lowest terms using the greatest common factor."}
+      ],
+      "estimated_minutes": 15,
+      "content": {
+        "intro": {
+          "explanation": "A fraction names a part of a whole. If you cut a pizza into 2 equal slices and take 1, you have 1/2. Cut the same pizza into 4 slices and take 2, and you have exactly the same amount: 2/4. Fractions that name the same amount are called equivalent. To make one, multiply the top and the bottom by the same number.",
+          "key_points": [
+            "The bottom number says how many equal parts the whole is cut into.",
+            "The top number says how many of those parts you have.",
+            "1/2 and 2/4 are the same amount, written differently.",
+            "To make an equivalent fraction, do the same thing to top and bottom."
+          ],
+          "worked_example": {
+            "problem": "Fill in the blank: 1/2 = ?/4",
+            "steps": [
+              "The bottom changed from 2 to 4, so we multiplied by 2.",
+              "Do the same to the top: 1 × 2 = 2.",
+              "So 1/2 = 2/4."
+            ],
+            "answer": "2/4"
+          },
+          "common_mistakes": [
+            "Changing only the bottom number (1/2 is not 1/4).",
+            "Adding the same number to top and bottom instead of multiplying."
+          ],
+          "check_questions": [
+            "If you ate 2 of 4 equal slices of pizza, how could you say that using the smallest numbers?",
+            "In your own words, why does multiplying top and bottom by 3 keep the fraction the same size?"
+          ]
+        },
+        "working": {
+          "explanation": "To simplify a fraction, divide the top and the bottom by the same number until nothing bigger than 1 divides both. The fastest way is to divide by the greatest common factor (GCF) in one step. A fraction is in lowest terms (simplest form) when its top and bottom share no common factor except 1.",
+          "key_points": [
+            "Equivalent fractions: multiply or divide top and bottom by the same non-zero number.",
+            "Simplify by dividing top and bottom by their greatest common factor.",
+            "Lowest terms means the only shared factor is 1.",
+            "Simplifying never changes the value."
+          ],
+          "worked_example": {
+            "problem": "Simplify 18/24",
+            "steps": [
+              "Factors of 18: 1, 2, 3, 6, 9, 18. Factors of 24: 1, 2, 3, 4, 6, 8, 12, 24.",
+              "The greatest common factor is 6.",
+              "Divide top and bottom by 6: 18 ÷ 6 = 3 and 24 ÷ 6 = 4.",
+              "So 18/24 = 3/4."
+            ],
+            "answer": "3/4"
+          },
+          "common_mistakes": [
+            "Stopping early: 18/24 = 9/12 is correct but not yet in lowest terms.",
+            "Dividing the top by one number and the bottom by another."
+          ],
+          "check_questions": [
+            "How can you tell when a fraction is fully simplified?",
+            "Can you simplify 10/15 and tell me which common factor you used?"
+          ]
+        },
+        "deep": {
+          "explanation": "Multiplying top and bottom by n is the same as multiplying the fraction by n/n, which equals 1, so the value cannot change. That is why every fraction has endless equivalent forms but exactly one lowest-terms form. Two fractions a/b and c/d are equal exactly when a × d = b × c (cross-multiplying), which is a quick test.",
+          "key_points": [
+            "Multiplying by n/n is multiplying by 1, so the value stays the same.",
+            "Every fraction has exactly one lowest-terms form.",
+            "Test equality with cross-multiplication: a/b = c/d when a × d = b × c.",
+            "A whole number n is the fraction n/1."
+          ],
+          "worked_example": {
+            "problem": "Simplify 84/126",
+            "steps": [
+              "Both are even, so divide by 2: 42/63.",
+              "Both are multiples of 3, so divide by 3: 14/21.",
+              "Both are multiples of 7, so divide by 7: 2/3.",
+              "2 and 3 share no factor except 1, so we are done. The GCF was 2 × 3 × 7 = 42.",
+              "So 84/126 = 2/3."
+            ],
+            "answer": "2/3"
+          },
+          "common_mistakes": [
+            "Believing a bigger numerator and denominator mean a bigger fraction.",
+            "Cancelling digits instead of factors (crossing out the 6s in 16/64 only works by luck)."
+          ],
+          "check_questions": [
+            "Why is multiplying top and bottom by the same number like multiplying by 1?",
+            "How could you quickly check whether 6/9 and 10/15 are equal without simplifying?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fractions-add-subtract",
+      "title": "Adding and subtracting fractions",
+      "summary": "Rewrite fractions with a common denominator, then add or subtract the tops.",
+      "prerequisites": ["fractions-basics"],
+      "objectives": [
+        {"id": "frac.common-denominator", "statement": "Find a common denominator and rewrite fractions to use it."},
+        {"id": "frac.add-sub", "statement": "Add and subtract fractions with unlike denominators and simplify the result."}
+      ],
+      "estimated_minutes": 20,
+      "content": {
+        "intro": {
+          "explanation": "When the bottoms match, the pieces are the same size, so you can just count them. 1 quarter plus 2 quarters is 3 quarters. Add the tops and keep the bottom the same, because the size of the pieces has not changed.",
+          "key_points": [
+            "Same bottom number means same-sized pieces.",
+            "Add or subtract only the top numbers.",
+            "Keep the bottom number unchanged.",
+            "Do not add the bottoms."
+          ],
+          "worked_example": {
+            "problem": "1/4 + 2/4",
+            "steps": [
+              "The bottoms are both 4, so the pieces match.",
+              "Add the tops: 1 + 2 = 3.",
+              "Keep the bottom: 4.",
+              "So 1/4 + 2/4 = 3/4."
+            ],
+            "answer": "3/4"
+          },
+          "common_mistakes": [
+            "Adding the bottoms too: 1/4 + 2/4 is not 3/8.",
+            "Forgetting that the answer is still counted in quarters."
+          ],
+          "check_questions": [
+            "If you have 3 fifths of a chocolate bar and eat 1 fifth, how much is left?",
+            "Why do we not add the bottom numbers?"
+          ]
+        },
+        "working": {
+          "explanation": "When the bottoms differ, first rewrite both fractions with a common denominator, a number both bottoms divide into. The least common multiple of the bottoms is the tidiest choice. Rewrite each fraction as an equivalent one, add or subtract the tops, then simplify if you can.",
+          "key_points": [
+            "Find the least common multiple (LCM) of the denominators.",
+            "Rewrite each fraction with that denominator, multiplying top and bottom.",
+            "Add or subtract the tops; keep the common denominator.",
+            "Simplify the answer if possible."
+          ],
+          "worked_example": {
+            "problem": "2/3 + 1/4",
+            "steps": [
+              "The LCM of 3 and 4 is 12.",
+              "2/3 = 8/12 (multiply by 4) and 1/4 = 3/12 (multiply by 3).",
+              "Add the tops: 8 + 3 = 11.",
+              "So 2/3 + 1/4 = 11/12, which is already in lowest terms."
+            ],
+            "answer": "11/12"
+          },
+          "common_mistakes": [
+            "Multiplying only the bottom and not the top when rewriting.",
+            "Adding tops and bottoms: 2/3 + 1/4 is not 3/7."
+          ],
+          "check_questions": [
+            "What common denominator would you pick for 1/6 and 1/4, and why?",
+            "Can you explain why 1/2 + 1/3 needs sixths?"
+          ]
+        },
+        "deep": {
+          "explanation": "Any common multiple of the denominators works, such as their product, but the least one keeps numbers small and answers easier to simplify. Subtraction follows the same steps. If the answer is larger than 1 you may write it as a mixed number. The reason this works: only same-sized pieces can be counted together.",
+          "key_points": [
+            "Any common multiple works; the LCM is just the smallest.",
+            "Subtraction uses the same method as addition.",
+            "Always check whether the result simplifies.",
+            "Improper results can be written as mixed numbers."
+          ],
+          "worked_example": {
+            "problem": "5/6 − 3/8",
+            "steps": [
+              "The LCM of 6 and 8 is 24.",
+              "5/6 = 20/24 (multiply by 4) and 3/8 = 9/24 (multiply by 3).",
+              "Subtract the tops: 20 − 9 = 11.",
+              "So 5/6 − 3/8 = 11/24, already in lowest terms."
+            ],
+            "answer": "11/24"
+          },
+          "common_mistakes": [
+            "Using the product of the denominators and forgetting to simplify afterwards.",
+            "Subtracting in the wrong order."
+          ],
+          "check_questions": [
+            "If you used 48 instead of 24 as the common denominator, what would you get and how would you fix it?",
+            "How could you estimate whether 5/6 − 3/8 is bigger or smaller than 1/2?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fractions-multiply-divide",
+      "title": "Multiplying and dividing fractions",
+      "summary": "Multiply tops and bottoms; divide by multiplying by the reciprocal.",
+      "prerequisites": ["fractions-basics"],
+      "objectives": [
+        {"id": "frac.multiply", "statement": "Multiply fractions and simplify the product."},
+        {"id": "frac.divide", "statement": "Divide fractions by multiplying by the reciprocal."}
+      ],
+      "estimated_minutes": 20,
+      "content": {
+        "intro": {
+          "explanation": "Multiplying by a fraction means taking a part of a part. Half of a third is one sixth. To multiply fractions, multiply the tops together and the bottoms together. No common denominator is needed.",
+          "key_points": [
+            "Multiply tops with tops and bottoms with bottoms.",
+            "No common denominator is needed for multiplying.",
+            "'Of' often means multiply: half of a third is 1/2 × 1/3.",
+            "Multiplying by a fraction below 1 makes the number smaller."
+          ],
+          "worked_example": {
+            "problem": "1/2 × 1/3",
+            "steps": [
+              "Multiply the tops: 1 × 1 = 1.",
+              "Multiply the bottoms: 2 × 3 = 6.",
+              "So 1/2 × 1/3 = 1/6."
+            ],
+            "answer": "1/6"
+          },
+          "common_mistakes": [
+            "Finding a common denominator first, which is not needed.",
+            "Expecting the answer to be bigger than both fractions."
+          ],
+          "check_questions": [
+            "If you have half a pizza and eat half of that, what fraction of the whole pizza did you eat?",
+            "Why does multiplying two fractions less than 1 give something smaller?"
+          ]
+        },
+        "working": {
+          "explanation": "Multiplying: multiply tops, multiply bottoms, simplify. Dividing: keep the first fraction, flip the second one (its reciprocal), and multiply. The reciprocal of a/b is b/a. Dividing by 2/5 is the same as multiplying by 5/2.",
+          "key_points": [
+            "Multiply: top × top over bottom × bottom.",
+            "The reciprocal of a/b is b/a.",
+            "Divide: keep, flip, multiply.",
+            "Simplify at the end, or cancel factors first."
+          ],
+          "worked_example": {
+            "problem": "3/4 ÷ 2/5",
+            "steps": [
+              "Keep 3/4 and flip 2/5 to get 5/2.",
+              "Multiply: 3/4 × 5/2 = (3 × 5)/(4 × 2) = 15/8.",
+              "15 and 8 share no factor, so 15/8 is in lowest terms (1 7/8 as a mixed number)."
+            ],
+            "answer": "15/8"
+          },
+          "common_mistakes": [
+            "Flipping the first fraction instead of the second.",
+            "Flipping but forgetting to change divide into multiply."
+          ],
+          "check_questions": [
+            "What is the reciprocal of 3/7, and what do you get when you multiply them?",
+            "Can you describe 'keep, flip, multiply' for 1/2 ÷ 1/4?"
+          ]
+        },
+        "deep": {
+          "explanation": "Dividing by a fraction asks how many of it fit into the other number. Since 1/4 fits into 1 four times, dividing by 1/4 is the same as multiplying by 4, the reciprocal. To keep numbers small, cancel common factors diagonally before multiplying: any top can cancel with any bottom. Dividing by a fraction less than 1 makes the answer bigger.",
+          "key_points": [
+            "Dividing by a number equals multiplying by its reciprocal.",
+            "Cross-cancel before multiplying to avoid big numbers.",
+            "Dividing by a fraction below 1 gives a larger result.",
+            "Zero has no reciprocal, so you cannot divide by 0."
+          ],
+          "worked_example": {
+            "problem": "6/7 ÷ 3/14",
+            "steps": [
+              "Flip the second fraction: 6/7 × 14/3.",
+              "Cancel 6 with 3 (6 ÷ 3 = 2) and 14 with 7 (14 ÷ 7 = 2).",
+              "Now multiply: 2/1 × 2/1 = 4.",
+              "So 6/7 ÷ 3/14 = 4."
+            ],
+            "answer": "4"
+          },
+          "common_mistakes": [
+            "Cancelling two tops together or two bottoms together.",
+            "Thinking dividing always makes numbers smaller."
+          ],
+          "check_questions": [
+            "How many halves fit into 3, and how does that connect to 3 × 2?",
+            "Why can't we divide by zero, thinking about its reciprocal?"
+          ]
+        }
+      }
+    }
+  ]
+}

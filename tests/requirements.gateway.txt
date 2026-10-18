@@ -1,3 +1,5 @@
 -r ../litellm/requirements.txt
 # LiteLLM's error classifier imports Prisma even when no database is configured.
 prisma==0.15.0
+# LiteLLM's A2A routes and the demo A2A agent (same pin as demo/a2a-agent).
+a2a-sdk[http-server]==1.2.2

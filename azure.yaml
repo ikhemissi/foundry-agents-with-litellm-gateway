@@ -27,6 +27,7 @@ services:
       ENTRA_GATEWAY_SCOPE: ${ENTRA_GATEWAY_SCOPE}
       ENTRA_AGENT_CLIENT_ID: ${ENTRA_AGENT_CLIENT_ID}
       ENTRA_AGENT_PRINCIPAL_ID: ${ENTRA_AGENT_PRINCIPAL_ID}
+      GATEWAY_TOOLS: ${GATEWAY_TOOLS=disabled}
       AZURE_KEY_VAULT_NAME: ${AZURE_KEY_VAULT_NAME}
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
       OTEL_SERVICE_NAME: ai-tutor-hosted-agent
@@ -56,6 +57,22 @@ services:
               appInsightsName="$APPLICATIONINSIGHTS_NAME" \
               hostedAuthMode="${HOSTED_AUTH_MODE:-api_key}" \
             --output none
+  # Optional internal demo backends, filtered out of provision/deploy/restore unless ENABLE_DEMO_BACKENDS
+  # is truthy. `azd package`/`azd build` read only the process environment, not the azd environment.
+  demo-mcp:
+    host: containerapp
+    project: demo/mcp-server
+    language: python
+    condition: ${ENABLE_DEMO_BACKENDS=false}
+    docker:
+      remoteBuild: true
+  demo-a2a:
+    host: containerapp
+    project: demo/a2a-agent
+    language: python
+    condition: ${ENABLE_DEMO_BACKENDS=false}
+    docker:
+      remoteBuild: true
 hooks:
   preprovision:
     shell: sh

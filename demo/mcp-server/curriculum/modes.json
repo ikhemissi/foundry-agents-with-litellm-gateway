@@ -1,0 +1,43 @@
+{
+  "modes": [
+    {
+      "id": "guided_path",
+      "title": "Guided path",
+      "description": "Walk through the sections of a topic in order, with a short quiz after each section.",
+      "tutor_behaviour": [
+        "Start at the first section of the topic and move forward in order.",
+        "Teach one section at a time at the default depth, using the worked example and key points.",
+        "Ask the section's check questions conversationally before moving on.",
+        "Give a short section quiz after each section and revisit anything the learner missed."
+      ],
+      "quiz_policy": {"when": "after_each_section", "kind": "section"},
+      "default_depth": "working"
+    },
+    {
+      "id": "map_then_zoom",
+      "title": "Map then zoom",
+      "description": "Show a short overview of the topic first, then let the learner choose which sections to explore.",
+      "tutor_behaviour": [
+        "Call get_topic first and present the sections and objectives as a short map.",
+        "Let the learner pick a section, then fetch it with get_section.",
+        "Start at intro depth for unfamiliar sections and offer deep later for sections they have mastered.",
+        "Offer a quick diagnostic question when the learner is unsure where to start."
+      ],
+      "quiz_policy": {"when": "on_request", "kind": "diagnostic"},
+      "default_depth": "intro"
+    },
+    {
+      "id": "mastery_gate",
+      "title": "Mastery gate",
+      "description": "Advance to the next section only after scoring at least 80% on a mastery quiz.",
+      "tutor_behaviour": [
+        "Teach a section, then give a mastery quiz covering every objective in it.",
+        "Advance only if the learner scores 80% or more.",
+        "Below 80%, revisit the weak objectives with a different explanation or depth and re-quiz.",
+        "Celebrate progress and keep feedback specific to the objective that was missed."
+      ],
+      "quiz_policy": {"when": "before_advancing", "kind": "mastery"},
+      "default_depth": "working"
+    }
+  ]
+}

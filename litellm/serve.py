@@ -1,7 +1,20 @@
+import logging
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
+
+def configure_audit_log() -> None:
+    """Route the nonsecret decision log to the container's stderr, independent of LiteLLM's levels."""
+    audit = logging.getLogger("gateway.audit")
+    audit.setLevel(logging.INFO)
+    audit.propagate = False
+    if not audit.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("gateway.audit %(message)s"))
+        audit.addHandler(handler)
+
 
 def main() -> None:
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
@@ -11,6 +24,8 @@ def main() -> None:
     )
     from entra_auth import verifier
     from gateway_app import CredentialBoundary
+
+    configure_audit_log()
 
     mode = os.environ.get("LITELLM_AUTH_MODE")
     if mode not in ("api_key", "entra"):

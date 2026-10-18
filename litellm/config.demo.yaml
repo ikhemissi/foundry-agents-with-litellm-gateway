@@ -1,0 +1,30 @@
+# Appended to config.entra.yaml only when the demo backends are enabled.
+# Both backends are internal-only Container Apps in the gateway's environment.
+mcp_servers:
+  curriculum:
+    url: http://demo-mcp/mcp
+    transport: http
+    description: Read-only curriculum catalogue and learning modes for the AI tutor.
+
+agents:
+  - agent_name: quiz_master
+    agent_card_params:
+      name: quiz_master
+      description: Creates and grades short quizzes for tutor topics and sections.
+      url: http://demo-a2a/
+      version: "1.0.0"
+      # Pin the wire format: the gateway then serves and expects A2A 1.0 only.
+      protocolVersion: "1.0"
+      capabilities:
+        streaming: false
+      defaultInputModes: [text]
+      defaultOutputModes: [text]
+      skills:
+        - id: create-quiz
+          name: Create quiz
+          description: Create a quiz for a topic or section at a chosen depth.
+          tags: [quiz]
+        - id: grade-quiz
+          name: Grade quiz
+          description: Grade submitted answers and name the objectives to revisit.
+          tags: [quiz]

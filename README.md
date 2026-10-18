@@ -264,13 +264,27 @@ an approved human, approved actor, delegated scope and `xms_act_fct` AgentIdenti
 facet `11`. Agent subjects/users (`xms_sub_fct` `11`/`13`) cannot impersonate an
 approved human. See Microsoft's [Agent ID claims reference](https://learn.microsoft.com/entra/agent-id/agent-token-claims).
 
-In Entra mode only POST `/chat/completions`, `/v1/chat/completions`, `/responses`,
-and `/v1/responses` with alias `gpt-5.4-nano` are exposed for inference.
-Only exact GET `/health/liveliness` and `/health/readiness` remain anonymous
-for the existing ACA probes. Management, UI, other health routes, query strings,
-provider overrides and unrecognized inference options are denied. Request bodies
-are capped at 4 MiB. Supported OpenAI generation settings pass through; caller
-`user`/`metadata` fields are discarded, not used as identity or trusted telemetry.
+In Entra mode the gateway exposes only these routes, each matched exactly (no
+query strings or path variants), and they are classified in
+[gateway_policy.py](litellm/gateway_policy.py):
+
+| Route class | Methods and paths | Request rules |
+| --- | --- | --- |
+| Health | `GET /health/liveliness`, `/health/readiness` | Anonymous, for the ACA probes |
+| Inference | `POST /chat/completions`, `/v1/chat/completions`, `/responses`, `/v1/responses` | Alias `gpt-5.4-nano` only; no provider overrides or unrecognized options; 4 MiB cap |
+| MCP (opt-in) | `POST /mcp`, `/mcp/<server>` | JSON-RPC `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call` only; 256 KiB cap |
+| A2A 1.0 (opt-in) | `POST /a2a/<agent>` with header `A2A-Version: 1.x`; authenticated `GET /a2a/<agent>/.well-known/agent-card.json` | JSON-RPC `SendMessage` with a message only (no 0.3 `message/send`, streaming, tasks or push); 64 KiB cap |
+
+Management, UI, MCP REST/OAuth routes, `/v1/agents`, other health routes and
+everything else return 403. A2A is **1.0 only**: legacy 0.3 callers are refused.
+
+Every authorization decision, and every refusal before authentication, writes one
+nonsecret line to the container log (`gateway.audit decision=allow|deny reason=...
+kind oid azp route resource rpc`): verified identifiers, route class and JSON-RPC
+method, never tokens or bodies. Values are sanitized to one token each. Query it in
+Log Analytics (`ContainerAppConsoleLogs_CL`, container `litellm`) to see who was
+denied and why, or which methods a new client sends. Caller `user`/`metadata` fields on inference are
+discarded, not used as identity or trusted telemetry.
 
 The Entra launcher wraps LiteLLM in [gateway_app.py](litellm/gateway_app.py) to
 remove bearer/alternate credential headers and untrusted tracing baggage
@@ -445,6 +459,87 @@ at a time; Entra mode does not continue accepting legacy keys.
    deployment. Stop sharing the master key as an inference credential after
    migration; the gateway may still need its own backend vault reference.
 
+## Curriculum and quiz tools through the gateway (optional)
+
+The gateway can front two tutor-specific backends, consumed by the hosted tutor. This is
+**off by default** and independent of inference. Both live in [demo/](demo) and run as
+**internal-only** Container Apps in the gateway's environment, built remotely in a small
+Azure Container Registry (admin user disabled, `AcrPull` via a dedicated identity):
+
+- **`curriculum` MCP server** (read-only, stateless): `list_topics`, `get_topic`,
+  `get_section(depth)` and `list_learning_modes`. Three topics (fractions, prime numbers,
+  linear equations), each with three sections and three depths (`intro`, `working`,
+  `deep`), stored as validated JSON. Learning modes: `guided_path`, `map_then_zoom`,
+  `mastery_gate`.
+- **`quiz_master` A2A 1.0 agent**: creates (`diagnostic`, `section`, `mastery`) and grades
+  quizzes. **Answers, scores and pass/fail are computed in code**; a quiz id is a short
+  (24-character), signed, stateless token a model can copy exactly, so no database is
+  needed and answers never leave the agent. A language model reached **through this gateway** (with the quiz agent's own managed identity)
+  may only reword questions and write feedback; any failure falls back to deterministic
+  text, and the reply says whether the model contributed (`model_assisted`).
+
+```
+hosted tutor ──Agent ID token──▶ LiteLLM gateway ──▶ curriculum MCP   (internal)
+                                      ├────────────▶ quiz_master A2A 1.0 (internal)
+              quiz agent ──its own managed identity──▶ gateway ──▶ model
+```
+
+The tutor asks the learner what they want to learn, how deep to go and how they like to
+learn, offers a learning mode, teaches one section at a time at the chosen depth, and
+offers a quiz at the end of each section. It must not state quiz answers itself.
+Learner progress is **not stored yet**; durable memory is a planned next step.
+Only the **hosted** tutor uses these tools. The prompt tutor does not: reaching them
+through a Foundry toolbox has not been built or tested here.
+
+**Access is per approved application, not per key.** `ENTRA_CAPABILITIES` maps an approved
+principal's object ID to the MCP servers (with a per-tool allowlist) and A2A agents it may
+reach. The auth hook turns that into LiteLLM's `object_permission`, which the pinned
+runtime enforces without a database. Principals with no grant, the quiz agent's own
+principal (inference only) and delegated user-via-agent tokens get 403 on these routes.
+Backends receive no caller credential. The quiz agent's identity is approved for inference
+automatically when the demo is enabled; nothing else needs configuring.
+
+Enable it (all approval-gated; the demo needs the Entra gateway):
+
+```bash
+azd env set ENABLE_DEMO_BACKENDS true
+azd env set ENTRA_CAPABILITIES '{"<hosted-agent-oid>":{"mcp":{"curriculum":["list_topics","get_topic","get_section","list_learning_modes"]},"agents":["quiz_master"]}}'
+azd env set GATEWAY_TOOLS enabled        # hosted tutor opt-in; requires LITELLM_AUTH_MODE=entra
+azd provision                            # registry, identities, internal apps, gateway policy
+azd deploy demo-mcp                      # one service per command; builds remotely in the registry
+azd deploy demo-a2a
+azd deploy ai-tutor-hosted-agent         # new version with the tool code
+```
+
+The quiz signing key is generated at provision time into a Container App secret (it is
+not an output and never reaches azd state); each provision rotates it, which only
+invalidates quizzes that are still open.
+
+**A2A 1.0 only.** The gateway requires `A2A-Version: 1.x` and the PascalCase method
+`SendMessage`; the legacy 0.3 `message/send` and `/.well-known/agent.json` are refused.
+The agent card is `/.well-known/agent-card.json`. Each tutor call is a single blocking
+message with no streaming or tasks.
+
+The hosted tutor connects to MCP lazily and tolerates an unavailable gateway (it keeps
+answering without tools, retrying every 30 s). Its credential is attached only to the
+gateway origin, redirects are off, and prompts are never requested. Guidance for using
+the tools is added in code only when they are enabled, so both tutors keep identical
+`agent.json` instructions.
+
+**Limits.** The backends are unauthenticated and rely on internal ingress, so any other
+app added to the same environment could reach them. Onward authentication from the
+gateway to real backends is not solved here: LiteLLM's MCP and A2A client auth uses static
+headers, OAuth client secrets, or token exchange, and for Foundry A2A agents only
+credentials on the agent entry (not the gateway's managed identity). There are no per-tool
+budgets or rate limits and no admin UI. The quiz id embeds its random seed, so anyone with
+the agent's source code and a quiz id could derive the answers; the signature stops
+tampering, not reading. Learners are not distinguished from each other (the gateway
+authorizes the agent, not the user), which is why per-learner memory needs a trusted
+learner id first. Azure Functions can host MCP servers (the MCP extension), but I found no
+released A2A support there, so both backends use Container Apps. The gateway logs one
+`Error listing tools` warning at startup if it starts before the backends do; calls worked
+afterwards in testing.
+
 ## Shared monitoring
 
 [monitoring.bicep](infra/modules/monitoring.bicep) creates one workspace-backed
@@ -491,6 +586,10 @@ agents/ai-tutor-hosted-agent/.venv/bin/python -m unittest discover \
 python3.13 -m venv .venv
 .venv/bin/python -m pip install -r tests/requirements.gateway.txt
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+
+# Demo backends (their own pinned requirements; run each in a throwaway environment).
+(cd demo/mcp-server && python -m unittest discover)
+(cd demo/a2a-agent && python -m unittest discover)
 ```
 
 Local tests use generated RSA tokens, mocked JWKS and inference services, the
@@ -500,6 +599,10 @@ inference/fallback, strict claims/routes/models, health probes, simulated signin
 key rotation/outage, legacy behavior, `include` handling, concurrent user
 isolation, cancellation, cleanup and token redaction. Prisma's Python package
 is a **test dependency** for LiteLLM's error classifier; no database is started.
+The MCP/A2A tests run the real pinned LiteLLM, our boundary and the real demo
+backends in a separate process (mirroring the `/etc/litellm` layout) and drive them
+with the official `mcp` client: per-tool grants, per-agent grants, denied principals,
+closed routes and methods, and that no caller credential reaches a backend.
 
 ### Live verification (one test environment)
 
@@ -520,8 +623,15 @@ sample environment. Nothing else here is claimed as Azure-verified.
 | Hosted tutor in `entra` mode with its genuine Agent ID (`agentIdentity`) | Works with no Key Vault access |
 | Revocation script removing the lingering hosted secret-reader assignment | Removed; telemetry publisher kept; tutor still works |
 | Telemetry scan after the above | Traces ingested; no JWTs, bearer headers or master key found |
+| Demo registry and two internal apps; remote image builds; deploy | Created; apps run the registry images; internal ingress only (outside requests get the environment's 404 page) |
+| Curriculum MCP server and `quiz_master` A2A 1.0 agent (internal apps, stock LiteLLM image) behind the gateway; hosted tutor with `GATEWAY_TOOLS=enabled` (agent version 5, then the short-id build) | Tutor listed learning modes and topics, followed the chosen mode, created a quiz through A2A (`A2A-Version: 1.0`, `SendMessage`) and graded it on the next turn with the exact short quiz id: score, per-question explanations and feedback returned |
+| Quiz agent's own managed identity (no Azure RBAC) calling the gateway for question rewording and feedback | Allowed for inference only (`oid` = quiz identity); the gateway audit trail shows tutor identity on `mcp`/`a2a` routes and quiz identity on `inference` |
+| First-version ~170-character quiz id | Failed live: the tutor model corrupted the id while copying it. Replaced by the 24-character id; the re-test passed |
+| Unauthenticated calls to `/mcp/curriculum`, `/a2a/quiz_master`, the agent card, `/v1/chat/completions` | 401 each; `/v1/models`, `/ui`, `/openapi.json` 403; liveness 200; non-POST `GET /mcp/curriculum` denied by route policy |
+| Prompt-client token (approved for inference only) on MCP, A2A, agent card | 403 on all three; inference still 200; master key 401; MCP REST and `/v1/agents` 403 |
+| Telemetry scan after the tool calls (466 records, gateway and hosted agent) | No JWTs, bearer headers, master key, prompt secret or forwarding header |
 
-**Not verified:** delegated (`entra_delegated`) operation (it needs a trusted
+**Not verified:** the prompt tutor using MCP/A2A through a Foundry toolbox, MCP/A2A with real third-party backends or Entra-protected backends, a user-via-agent token reaching tools (denied by policy; untested live), Azure Functions-hosted backends, delegated (`entra_delegated`) operation (it needs a trusted
 sign-in/OBO backend, consent and approved human/actor IDs that do not exist
 here), registration *adoption* of pre-existing applications, other tenants,
 Foundry portal Insights rendering with the new reader role, and Agent ID

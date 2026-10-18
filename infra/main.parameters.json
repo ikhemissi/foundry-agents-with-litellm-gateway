@@ -61,6 +61,18 @@
     },
     "entraDelegatedOnly": {
       "value": "${ENTRA_DELEGATED_ONLY=false}"
+    },
+    "entraCapabilities": {
+      "value": "${ENTRA_CAPABILITIES}"
+    },
+    "enableDemoBackends": {
+      "value": "${ENABLE_DEMO_BACKENDS=false}"
+    },
+    "demoMcpExists": {
+      "value": "${SERVICE_DEMO_MCP_RESOURCE_EXISTS=false}"
+    },
+    "demoA2aExists": {
+      "value": "${SERVICE_DEMO_A2A_RESOURCE_EXISTS=false}"
     }
   }
 }

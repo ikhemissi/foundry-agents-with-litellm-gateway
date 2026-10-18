@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+test_*.py
+Dockerfile
+.dockerignore
+*_env/

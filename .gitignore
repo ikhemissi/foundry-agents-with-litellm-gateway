@@ -9,3 +9,5 @@ __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
+# azd creates <service>_env virtual environments inside service folders.
+*_env/

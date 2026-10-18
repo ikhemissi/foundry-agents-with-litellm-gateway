@@ -409,3 +409,64 @@ test('Azure transport keeps Graph v1.0 in the path, disables redirects, caches t
   await assert.rejects(denied('PUT', '/secrets/test', { value: 'secret' }),
     error => /403/.test(error.message) && !/secret/.test(error.message));
 });
+
+test('preflight validates ENTRA_CAPABILITIES against approved principals and strict names', () => {
+  const env = {
+    GATEWAY_AUTH_MODE: 'entra', HOSTED_AUTH_MODE: 'entra', PROMPT_AUTH_MODE: 'oauth2',
+    ENTRA_TENANT_ID: id(1), ENTRA_GATEWAY_CLIENT_ID: id(4),
+    ENTRA_AGENT_CLIENT_ID: id(42), ENTRA_AGENT_PRINCIPAL_ID: id(43), ENTRA_PROMPT_CLIENT_ID: id(7),
+    ENTRA_APP_PRINCIPALS: JSON.stringify([{ oid: id(8), azp: id(7) }, { oid: id(43), azp: id(42) }]),
+  };
+  const grant = { mcp: { math_tools: ['add', 'is_prime'] }, agents: ['problem_setter'] };
+  const withCapabilities = value => ({ ...env, ENTRA_CAPABILITIES: JSON.stringify(value) });
+  const invalid = (value, pattern) => assert.throws(() => validateAuthConfig(withCapabilities(value)), pattern);
+
+  assert.doesNotThrow(() => validateAuthConfig(withCapabilities({})));
+  assert.doesNotThrow(() => validateAuthConfig(withCapabilities({ [id(43)]: grant, [id(8).toUpperCase()]: { agents: ['problem_setter'] } })));
+  assert.doesNotThrow(() => validateAuthConfig({ ...withCapabilities({ [id(8)]: grant }), ENABLE_DEMO_BACKENDS: 'true' }));
+  assert.throws(() => validateAuthConfig({ ...env, ENTRA_CAPABILITIES: '' }), /unset it/);
+  assert.throws(() => validateAuthConfig({ ...env, ENTRA_CAPABILITIES: '[]' }), /JSON object/);
+  assert.throws(() => validateAuthConfig({ ...env, ENTRA_CAPABILITIES: '{' }), /JSON object/);
+  invalid({ [id(99)]: grant }, /approved oids/);
+  invalid({ 'not-a-guid': grant }, /GUID/);
+  invalid({ [id(8)]: [] }, /objects with only mcp and\/or agents/);
+  invalid({ [id(8)]: {} }, /objects with only mcp and\/or agents/);
+  invalid({ [id(8)]: { admin: true } }, /objects with only mcp and\/or agents/);
+  invalid({ [id(8)]: { mcp: [] } }, /object of server to tool arrays/);
+  invalid({ [id(8)]: { mcp: {} } }, /object of server to tool arrays/);
+  invalid({ [id(8)]: { mcp: { math_tools: [] } } }, /non-empty array/);
+  invalid({ [id(8)]: { mcp: { math_tools: 'add' } } }, /non-empty array/);
+  invalid({ [id(8)]: { mcp: { Math: ['add'] } } }, /server names/);
+  invalid({ [id(8)]: { mcp: { math_tools: ['Add'] } } }, /entries must match/);
+  invalid({ [id(8)]: { mcp: { math_tools: ['1add'] } } }, /entries must match/);
+  invalid({ [id(8)]: { mcp: { math_tools: ['a'.repeat(42)] } } }, /entries must match/);
+  invalid({ [id(8)]: { mcp: { math_tools: ['add', 'add'] } } }, /duplicates/);
+  invalid({ [id(8)]: { agents: [] } }, /non-empty array/);
+  invalid({ [id(8)]: { agents: { problem_setter: true } } }, /non-empty array/);
+  invalid({ [id(8)]: { agents: ['problem-setter'] } }, /entries must match/);
+});
+
+test('preflight keeps capabilities and demo backends tied to the Entra gateway and an exact boolean', () => {
+  const capabilities = JSON.stringify({ [id(8)]: { agents: ['problem_setter'] } });
+  assert.doesNotThrow(() => validateAuthConfig({ ENTRA_CAPABILITIES: '{}', ENABLE_DEMO_BACKENDS: 'false' }));
+  assert.throws(() => validateAuthConfig({ ENTRA_CAPABILITIES: capabilities }), /requires the Entra gateway/);
+  assert.throws(() => validateAuthConfig({ ENABLE_DEMO_BACKENDS: 'true' }), /only registered in the Entra gateway/);
+  for (const value of ['True', 'TRUE', '1', 'yes', '']) {
+    assert.throws(() => validateAuthConfig({ ENABLE_DEMO_BACKENDS: value }), /exactly true or false/, value);
+  }
+});
+
+test('preflight requires a GUID gateway audience for the quiz agent when demo backends are enabled', () => {
+  const env = {
+    GATEWAY_AUTH_MODE: 'entra', HOSTED_AUTH_MODE: 'entra', PROMPT_AUTH_MODE: 'oauth2',
+    ENTRA_TENANT_ID: id(1), ENTRA_GATEWAY_CLIENT_ID: id(4), ENABLE_DEMO_BACKENDS: 'true',
+    ENTRA_AGENT_CLIENT_ID: id(42), ENTRA_AGENT_PRINCIPAL_ID: id(43), ENTRA_PROMPT_CLIENT_ID: id(7),
+    ENTRA_APP_PRINCIPALS: JSON.stringify([{ oid: id(8), azp: id(7) }, { oid: id(43), azp: id(42) }]),
+  };
+  assert.doesNotThrow(() => validateAuthConfig(env));
+  for (const value of [undefined, '', 'api://x', 'not-a-guid']) {
+    assert.throws(() => validateAuthConfig({ ...env, ENTRA_GATEWAY_CLIENT_ID: value }),
+      /ENTRA_GATEWAY_CLIENT_ID \(the quiz agent token audience\) must be a GUID/, String(value));
+  }
+  assert.throws(() => validateAuthConfig({ ...env, GATEWAY_AUTH_MODE: 'api_key' }), /only registered in the Entra gateway/);
+});

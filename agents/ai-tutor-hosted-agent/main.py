@@ -23,6 +23,8 @@ from azure.monitor.opentelemetry import configure_azure_monitor
 from openai import AsyncOpenAI
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from gateway_client import RequestCredentialAuth, GatewayTools, TOOL_GUIDANCE, gateway_origin
+
 log = logging.getLogger(__name__)
 FORWARDING_HEADER = b"x-client-litellm-authorization"
 
@@ -39,27 +41,14 @@ class ForwardedToken:
 forwarded_token: ContextVar[ForwardedToken | None] = ContextVar("forwarded_token", default=None)
 
 
-class RequestCredentialAuth(httpx.Auth):
-    def __init__(self, get_key: Callable[[], Awaitable[str]]) -> None:
-        self.get_key = get_key
-
-    async def async_auth_flow(
-        self, request: httpx.Request,
-    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
-        request.headers["Authorization"] = f"Bearer {await self.get_key()}"
-        try:
-            yield request
-        finally:
-            request.headers.pop("Authorization", None)
-
-
 def create_openai_client(
     base_url: str, get_key: Callable[[], Awaitable[str]],
 ) -> AsyncOpenAI:
     return AsyncOpenAI(
         base_url=base_url, api_key="request-local-credential", max_retries=0,
         http_client=httpx.AsyncClient(
-            follow_redirects=False, auth=RequestCredentialAuth(get_key),
+            follow_redirects=False,
+            auth=RequestCredentialAuth(get_key, gateway_origin(base_url)),
         ),
     )
 
@@ -154,6 +143,7 @@ def create_agent(
     definition_path: Path = Path(__file__).with_name("agent.json"),
     *,
     async_client: AsyncOpenAI,
+    gateway_tools: GatewayTools | None = None,
 ) -> Agent:
     endpoint = urlparse(base_url)
     if (
@@ -174,10 +164,17 @@ def create_agent(
         model=definition["model"],
         async_client=async_client,
     )
+    if gateway_tools is None:
+        return Agent(
+            client=client,
+            name=definition["name"],
+            instructions=definition["instructions"],
+        )
     return Agent(
         client=client,
         name=definition["name"],
-        instructions=definition["instructions"],
+        instructions=definition["instructions"] + TOOL_GUIDANCE,
+        tools=gateway_tools.tools,
     )
 
 
@@ -189,9 +186,27 @@ async def read_gateway_key(vault: SecretClient) -> str:
     return secret.value
 
 
-def create_server(agent: Agent, client: AsyncOpenAI, mode: str) -> ResponsesHostServer:
+def gateway_tools_enabled(mode: str) -> bool:
+    setting = os.environ.get("GATEWAY_TOOLS", "disabled")
+    if setting not in ("enabled", "disabled"):
+        raise ValueError("GATEWAY_TOOLS must be enabled or disabled.")
+    if setting == "enabled" and mode != "entra":
+        # Delegated users and the legacy key have no tool or agent grants at the gateway.
+        raise ValueError("GATEWAY_TOOLS=enabled requires LITELLM_AUTH_MODE=entra.")
+    return setting == "enabled"
+
+
+def create_server(
+    agent: Agent, client: AsyncOpenAI, mode: str, gateway_tools: GatewayTools | None = None,
+) -> ResponsesHostServer:
+    async def prepare(request: HostedResponseRequest, options: dict[str, Any]) -> dict[str, Any]:
+        if gateway_tools is not None:
+            await gateway_tools.ensure_connected()
+        return prepare_options(request, options)
+
     server = ResponsesHostServer(
-        agent, configure_observability=None, prepare_options=prepare_options,
+        agent, configure_observability=None,
+        prepare_options=prepare if gateway_tools is not None else prepare_options,
     )
     server.add_middleware(DelegatedTokenBoundary, mode=mode)
     previous_lifespan = server.router.lifespan_context
@@ -202,6 +217,8 @@ def create_server(agent: Agent, client: AsyncOpenAI, mode: str) -> ResponsesHost
             async with previous_lifespan(app):
                 yield
         finally:
+            if gateway_tools is not None:
+                await gateway_tools.aclose()
             await client.close()
 
     server.router.lifespan_context = lifespan
@@ -215,6 +232,7 @@ def main() -> None:
         "authorization,api-key,x-client-.*,.*token.*,.*secret.*"
     )
     mode = auth_mode()
+    tools_enabled = gateway_tools_enabled(mode)
     with ExitStack() as stack:
         credential = stack.enter_context(DefaultAzureCredential())
         configure_azure_monitor(
@@ -238,11 +256,18 @@ def main() -> None:
         else:
             get_credential = delegated_key
         client = create_openai_client(os.environ["LITELLM_BASE_URL"], get_credential)
+        gateway_tools = (
+            GatewayTools(os.environ["LITELLM_BASE_URL"], get_credential) if tools_enabled else None
+        )
         try:
-            agent = create_agent(os.environ["LITELLM_BASE_URL"], async_client=client)
+            agent = create_agent(
+                os.environ["LITELLM_BASE_URL"], async_client=client, gateway_tools=gateway_tools,
+            )
             # Keep the explicit Entra-authenticated exporter; do not configure it twice.
-            create_server(agent, client, mode).run()
+            create_server(agent, client, mode, gateway_tools).run()
         finally:
+            if gateway_tools is not None and not gateway_tools.client.is_closed:
+                asyncio.run(gateway_tools.aclose())
             if not client.is_closed():
                 asyncio.run(client.close())
 

@@ -1,10 +1,12 @@
-"""Database-free inference policy, invoked through LiteLLM's OSS custom_auth hook."""
+"""Database-free Entra authorization for inference, MCP and A2A, via LiteLLM's OSS custom_auth hook."""
 
 import asyncio
 import json
 import logging
 import os
+import re
 import time
+from dataclasses import dataclass
 from functools import lru_cache
 from uuid import UUID
 
@@ -13,27 +15,9 @@ import jwt
 from fastapi import HTTPException, Request
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from credential_context import incoming_credential
+from gateway_policy import MODEL, NAME, PROVIDER_OVERRIDES, INFERENCE_FIELDS, audit, classify, rpc_method
 
 log = logging.getLogger(__name__)
-INFERENCE_ROUTES = frozenset({
-    "/chat/completions", "/v1/chat/completions", "/responses", "/v1/responses",
-})
-HEALTH_ROUTES = frozenset({"/health/liveliness", "/health/readiness"})
-MODEL = "gpt-5.4-nano"
-PROVIDER_OVERRIDES = frozenset({
-    "api_key", "api_base", "base_url", "api_version", "custom_llm_provider",
-    "headers", "extra_headers", "proxy_server_request", "litellm_metadata",
-})
-INFERENCE_FIELDS = frozenset({
-    "model", "messages", "input", "instructions", "stream", "stream_options",
-    "temperature", "top_p", "max_tokens", "max_completion_tokens", "max_output_tokens",
-    "frequency_penalty", "presence_penalty", "stop", "seed", "n", "logprobs",
-    "top_logprobs", "logit_bias", "response_format", "text", "reasoning",
-    "reasoning_effort", "verbosity", "tools", "tool_choice", "parallel_tool_calls",
-    "prediction", "modalities", "audio", "service_tier", "store", "include",
-    "truncation", "previous_response_id", "prompt_cache_key", "prompt_cache_retention",
-    "safety_identifier", "user", "metadata",
-})
 
 
 def guid(value: object) -> str:
@@ -49,6 +33,49 @@ def guid_set(name: str) -> frozenset[str]:
     return frozenset(guid(value) for value in values)
 
 
+class PrincipalDenied(HTTPException):
+    """A 403 for a signature-verified principal; carries its identifiers for the audit log."""
+
+    def __init__(self, detail: str, oid: str, azp: str, kind: str, reason: str) -> None:
+        super().__init__(403, detail)
+        self.oid, self.azp, self.kind, self.reason = oid, azp, kind, reason
+
+
+@dataclass(frozen=True)
+class Capabilities:
+    """What an approved application principal may reach beyond inference."""
+
+    mcp: dict[str, frozenset[str]]
+    agents: frozenset[str]
+
+
+def parse_capabilities(raw: str, apps: frozenset[tuple[str, str]]) -> dict[str, Capabilities]:
+    document = json.loads(raw)
+    if not isinstance(document, dict):
+        raise ValueError("ENTRA_CAPABILITIES must be a JSON object.")
+    approved = {oid for oid, _ in apps}
+    parsed = {}
+    for key, grant in document.items():
+        oid = guid(key)
+        if oid not in approved or not isinstance(grant, dict) or grant.keys() - {"mcp", "agents"}:
+            raise ValueError("ENTRA_CAPABILITIES must reference approved principals with mcp/agents grants.")
+        servers = grant.get("mcp", {})
+        agents = grant.get("agents", [])
+        if not isinstance(servers, dict) or not isinstance(agents, list):
+            raise ValueError("Invalid ENTRA_CAPABILITIES grant.")
+        mcp = {}
+        for server, tools in servers.items():
+            if not NAME.match(server) or not isinstance(tools, list) or not tools:
+                raise ValueError("Invalid MCP grant.")
+            if not all(isinstance(tool, str) and re.match(r"^[A-Za-z0-9_.:-]{1,128}$", tool) for tool in tools):
+                raise ValueError("Invalid MCP tool name.")
+            mcp[server] = frozenset(tools)
+        if not all(isinstance(agent, str) and NAME.match(agent) for agent in agents):
+            raise ValueError("Invalid agent name.")
+        parsed[oid] = Capabilities(mcp=mcp, agents=frozenset(agents))
+    return parsed
+
+
 class EntraVerifier:
     def __init__(self) -> None:
         self.tenant = guid(os.environ["ENTRA_TENANT_ID"])
@@ -60,6 +87,7 @@ class EntraVerifier:
         if not isinstance(principals, list):
             raise ValueError("ENTRA_APP_PRINCIPALS must be a JSON array.")
         self.apps = frozenset((guid(p["oid"]), guid(p["azp"])) for p in principals)
+        self.capabilities = parse_capabilities(os.environ.get("ENTRA_CAPABILITIES", "{}"), self.apps)
         self.users = guid_set("ENTRA_DELEGATED_USERS")
         self.actors = guid_set("ENTRA_DELEGATED_ACTORS")
         delegated_only = os.environ.get("ENTRA_DELEGATED_ONLY", "false")
@@ -125,7 +153,7 @@ class EntraVerifier:
         scope = claims.get("scp")
         if claims.get("idtyp") == "app" and scope in (None, "", "/"):
             if self.delegated_only or (oid, actor) not in self.apps:
-                raise HTTPException(403, "Application principal is not permitted.")
+                raise PrincipalDenied("Application principal is not permitted.", oid, actor, "application", "principal")
             return oid, actor, "application"
         # Agent user accounts are not approved human delegation.
         if (
@@ -137,7 +165,7 @@ class EntraVerifier:
             or "11" not in str(claims.get("xms_act_fct", "")).split()
             or {"11", "13"}.intersection(str(claims.get("xms_sub_fct", "")).split())
         ):
-            raise HTTPException(403, "Delegated principal, actor, or scope is not permitted.")
+            raise PrincipalDenied("Delegated principal, actor, or scope is not permitted.", oid, actor, "delegated", "delegation")
         return oid, actor, "delegated"
 
 
@@ -146,26 +174,90 @@ def verifier() -> EntraVerifier:
     return EntraVerifier()
 
 
+def tool_permission(oid: str, route, grants: Capabilities | None):
+    """Build the LiteLLM object permission for an MCP or A2A route, or raise 403."""
+    from litellm.proxy._experimental.mcp_server.mcp_server_manager import global_mcp_server_manager
+    from litellm.proxy._types import LiteLLM_ObjectPermissionTable
+    from litellm.proxy.agent_endpoints.agent_registry import global_agent_registry
+
+    if grants is None:
+        raise HTTPException(403, "Principal has no tool or agent access.")
+    if route.kind == "mcp":
+        if not grants.mcp or (route.resource is not None and route.resource not in grants.mcp):
+            raise HTTPException(403, "MCP server is not permitted.")
+        servers = {}
+        for name, tools in grants.mcp.items():
+            server = global_mcp_server_manager.get_mcp_server_by_name(name)
+            if server is None:
+                raise HTTPException(403, "MCP server is not permitted.")
+            servers[server.server_id] = sorted(tools)
+        return LiteLLM_ObjectPermissionTable(
+            object_permission_id=f"entra-{oid}", mcp_servers=list(servers), mcp_tool_permissions=servers,
+        )
+    if route.resource not in grants.agents:
+        raise HTTPException(403, "Agent is not permitted.")
+    agent = global_agent_registry.get_agent_by_name(route.resource)
+    if agent is None:
+        raise HTTPException(403, "Agent is not permitted.")
+    return LiteLLM_ObjectPermissionTable(object_permission_id=f"entra-{oid}", agents=[agent.agent_id])
+
+
+async def request_rpc(request: Request, route) -> str | None:
+    """The JSON-RPC method of an MCP/A2A request, for the audit log only."""
+    if route is None or route.kind in ("inference", "health", "a2a_card"):
+        return None
+    try:
+        return rpc_method(await request.json())
+    except ValueError:
+        return None
+
+
 async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
     # The outer boundary removes credentials before LiteLLM logging/metadata.
     credential = incoming_credential.get()
     if credential is None or credential.value is None:
         raise HTTPException(401, "A bearer token is required.")
     token, credential.value = credential.value, None
-    oid, actor, kind = await verifier().authenticate(token)
-    del token
-    if request.method != "POST" or request.url.path not in INFERENCE_ROUTES:
-        raise HTTPException(403, "Only inference routes are permitted.")
-    body = await request.json()
-    if not isinstance(body, dict) or body.get("model") != MODEL:
-        raise HTTPException(403, "Model is not permitted.")
-    # Inference clients cannot override provider credentials, endpoints, or headers.
-    if PROVIDER_OVERRIDES.intersection(body):
-        raise HTTPException(403, "Provider overrides are not permitted.")
-    if body.keys() - INFERENCE_FIELDS:
-        raise HTTPException(403, "Unsupported inference options.")
+    route = classify(request.method, request.url.path)
+    where = {"route": route.kind if route else None, "resource": route.resource if route else None}
+    try:
+        oid, actor, kind = await verifier().authenticate(token)
+    except PrincipalDenied as denied:
+        audit("deny", denied.reason, kind=denied.kind, oid=denied.oid, azp=denied.azp, **where,
+              rpc=await request_rpc(request, route))
+        raise
+    except HTTPException as error:
+        # The token failed validation, so none of its claims are trustworthy enough to log.
+        audit("deny", "token" if error.status_code == 401 else "identity_service", **where)
+        raise
+    finally:
+        del token
+    who = {"kind": kind, "oid": oid, "azp": actor, **where}
+    try:
+        if route is None or route.kind == "health":
+            raise HTTPException(403, "Route is not permitted.")
+        metadata = {"principal_kind": kind, "actor_id": actor}
+        permission = None
+        if route.kind == "inference":
+            body = await request.json()
+            if not isinstance(body, dict) or body.get("model") != MODEL:
+                raise HTTPException(403, "Model is not permitted.")
+            # Inference clients cannot override provider credentials, endpoints, or headers.
+            if PROVIDER_OVERRIDES.intersection(body):
+                raise HTTPException(403, "Provider overrides are not permitted.")
+            if body.keys() - INFERENCE_FIELDS:
+                raise HTTPException(403, "Unsupported inference options.")
+        else:
+            # Tools and agents are granted to approved applications only, never to delegated users.
+            if kind != "application":
+                raise HTTPException(403, "Delegated principals cannot use tools or agents.")
+            permission = tool_permission(oid, route, verifier().capabilities.get(oid))
+    except HTTPException as error:
+        audit("deny", error.detail, **who, rpc=await request_rpc(request, route))
+        raise
+    audit("allow", "ok", **who, rpc=await request_rpc(request, route))
     return UserAPIKeyAuth(
         api_key=f"entra:{oid}:{actor}", user_id=oid, end_user_id=oid,
         user_role=LitellmUserRoles.INTERNAL_USER, models=[MODEL],
-        metadata={"principal_kind": kind, "actor_id": actor},
+        object_permission=permission, metadata=metadata,
     )

@@ -45,6 +45,14 @@ param entraAgentClientId string = ''
 @description('Actual hosted Agent ID service principal object ID; obtain and approve after first agent deployment.')
 param entraAgentPrincipalId string = ''
 param promptClientId string = ''
+@description('Principal-keyed MCP tool and A2A agent grants as JSON: {"<oid>": {"mcp": {"<server>": ["<tool>"]}, "agents": ["<agent>"]}}.')
+param entraCapabilities object = {}
+@description('Deploy the optional internal demo MCP and A2A backends (Container Apps plus a registry).')
+param enableDemoBackends bool = false
+@description('Set by azd (SERVICE_DEMO_MCP_RESOURCE_EXISTS) so reprovisioning keeps the deployed image.')
+param demoMcpExists bool = false
+@description('Set by azd (SERVICE_DEMO_A2A_RESOURCE_EXISTS) so reprovisioning keeps the deployed image.')
+param demoA2aExists bool = false
 
 @description('Additional tags applied to every resource type that supports tags.')
 param tags object = {}
@@ -136,6 +144,18 @@ module monitoring './modules/monitoring.bicep' = {
   }
 }
 
+// Created before the gateway app so the gateway can approve it without depending on demo-backends,
+// which itself depends on the gateway's Container Apps environment.
+module demoQuizIdentity './modules/demo-quiz-identity.bicep' = if (enableDemoBackends) {
+  name: 'demo-quiz-identity'
+  scope: resourceGroup
+  params: {
+    location: location
+    tags: resourceTags
+    suffix: suffix
+  }
+}
+
 module containerApps './modules/container-apps.bicep' = {
   name: 'gateway-container-apps'
   scope: resourceGroup
@@ -153,10 +173,17 @@ module containerApps './modules/container-apps.bicep' = {
     gatewayAuthMode: gatewayAuthMode
     entraTenantId: entraTenantId
     entraGatewayClientId: entraGatewayClientId
-    entraAppPrincipals: entraAppPrincipals
+    entraAppPrincipals: enableDemoBackends ? union(entraAppPrincipals, [
+      {
+        oid: demoQuizIdentity!.outputs.principalId
+        azp: demoQuizIdentity!.outputs.clientId
+      }
+    ]) : entraAppPrincipals
     entraDelegatedUsers: entraDelegatedUsers
     entraDelegatedActors: entraDelegatedActors
     entraDelegatedOnly: entraDelegatedOnly
+    enableDemoBackends: enableDemoBackends
+    entraCapabilities: entraCapabilities
   }
 }
 
@@ -171,6 +198,42 @@ module modelConnection './modules/model-connection.bicep' = if (promptAuthMode =
     litellmEndpoint: containerApps.outputs.endpoint
     litellmMasterKey: litellmMasterKey
     modelDeploymentName: sourceFoundry.outputs.modelDeploymentName
+  }
+}
+
+var keepMcpImage = enableDemoBackends && demoMcpExists
+var keepA2aImage = enableDemoBackends && demoA2aExists
+
+module demoMcpImage './modules/fetch-container-image.bicep' = if (keepMcpImage) {
+  name: 'demo-mcp-image'
+  scope: resourceGroup
+  params: {
+    name: 'demo-mcp'
+  }
+}
+
+module demoA2aImage './modules/fetch-container-image.bicep' = if (keepA2aImage) {
+  name: 'demo-a2a-image'
+  scope: resourceGroup
+  params: {
+    name: 'demo-a2a'
+  }
+}
+
+module demoBackends './modules/demo-backends.bicep' = if (enableDemoBackends) {
+  name: 'demo-backends'
+  scope: resourceGroup
+  params: {
+    location: location
+    tags: resourceTags
+    suffix: suffix
+    environmentId: containerApps.outputs.environmentId
+    demoMcpImage: keepMcpImage ? demoMcpImage!.outputs.image : ''
+    demoA2aImage: keepA2aImage ? demoA2aImage!.outputs.image : ''
+    quizIdentityId: demoQuizIdentity!.outputs.id
+    quizIdentityClientId: demoQuizIdentity!.outputs.clientId
+    gatewayEndpoint: containerApps.outputs.endpoint
+    gatewayAudience: gatewayAuthMode == 'entra' ? entraGatewayClientId : ''
   }
 }
 
@@ -203,3 +266,7 @@ output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
 output APPLICATIONINSIGHTS_RESOURCE_ID string = monitoring.outputs.appInsightsId
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
 output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.workspaceId
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = enableDemoBackends ? demoBackends!.outputs.registryEndpoint : ''
+output AZURE_CONTAINER_REGISTRY_NAME string = enableDemoBackends ? demoBackends!.outputs.registryName : ''
+output DEMO_QUIZ_IDENTITY_PRINCIPAL_ID string = enableDemoBackends ? demoQuizIdentity!.outputs.principalId : ''
+output DEMO_QUIZ_IDENTITY_CLIENT_ID string = enableDemoBackends ? demoQuizIdentity!.outputs.clientId : ''

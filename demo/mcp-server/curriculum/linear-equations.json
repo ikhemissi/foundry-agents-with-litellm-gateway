@@ -1,0 +1,287 @@
+{
+  "id": "linear-equations",
+  "title": "Linear equations",
+  "summary": "Solve equations like 2x + 1 = 9 by undoing operations while keeping both sides balanced.",
+  "prerequisites": [],
+  "sections": [
+    {
+      "id": "eq-one-step",
+      "title": "One-step equations",
+      "summary": "Undo a single operation to find the unknown, keeping the equation balanced.",
+      "prerequisites": [],
+      "objectives": [
+        {"id": "eq.one-step", "statement": "Solve equations that need a single operation to isolate the variable."},
+        {"id": "eq.inverse-ops", "statement": "Choose the inverse operation (add/subtract, multiply/divide) that undoes the one in the equation."}
+      ],
+      "estimated_minutes": 15,
+      "content": {
+        "intro": {
+          "explanation": "An equation is like a balanced scale: both sides weigh the same. The letter x stands for a number we do not know yet. To find it, we get x alone on one side. Whatever we do to one side, we must do to the other so the scale stays balanced. To undo adding 3, subtract 3.",
+          "key_points": [
+            "An equation says two things are equal.",
+            "The letter is a mystery number we want to find.",
+            "Do the same thing to both sides to keep the balance.",
+            "Undo adding by subtracting."
+          ],
+          "worked_example": {
+            "problem": "Solve x + 3 = 7",
+            "steps": [
+              "x has 3 added to it. Undo that by subtracting 3 from both sides.",
+              "x + 3 − 3 = 7 − 3.",
+              "x = 4.",
+              "Check: 4 + 3 = 7."
+            ],
+            "answer": "x = 4"
+          },
+          "common_mistakes": [
+            "Subtracting 3 from only one side.",
+            "Adding 3 instead of subtracting it."
+          ],
+          "check_questions": [
+            "If a scale has x and 3 weights on one side and 7 on the other, how would you find x?",
+            "Why must we do the same thing to both sides?"
+          ]
+        },
+        "working": {
+          "explanation": "Each operation has an inverse that undoes it. Addition and subtraction undo each other. Multiplication and division undo each other. When x is multiplied by a number, divide both sides by that number. Always finish by substituting your answer back into the original equation to check it.",
+          "key_points": [
+            "Inverse pairs: + and −, × and ÷.",
+            "Apply the inverse to both sides.",
+            "6x means 6 times x, so divide by 6.",
+            "Check by substituting into the original equation."
+          ],
+          "worked_example": {
+            "problem": "Solve 6x = 42",
+            "steps": [
+              "x is multiplied by 6, so divide both sides by 6.",
+              "6x ÷ 6 = 42 ÷ 6.",
+              "x = 7.",
+              "Check: 6 × 7 = 42."
+            ],
+            "answer": "x = 7"
+          },
+          "common_mistakes": [
+            "Multiplying by 6 instead of dividing.",
+            "Reading 6x as 6 + x."
+          ],
+          "check_questions": [
+            "Which inverse operation would you use for x ÷ 4 = 5?",
+            "How can you check that x = 7 really solves 6x = 42?"
+          ]
+        },
+        "deep": {
+          "explanation": "Solving means finding the one value that makes the equation true. When x is multiplied by a fraction, undo it by multiplying by the reciprocal, because that makes the coefficient 1. Dividing by a number and multiplying by its reciprocal are the same move. Subtracting is just adding a negative, so the same idea covers negative numbers.",
+          "key_points": [
+            "The solution is the value that makes both sides equal.",
+            "To undo multiplication by a/b, multiply by b/a.",
+            "Subtracting a number is adding its negative.",
+            "Aim for a coefficient of exactly 1 on x."
+          ],
+          "worked_example": {
+            "problem": "Solve (2/3)x = 8",
+            "steps": [
+              "x is multiplied by 2/3. The reciprocal is 3/2.",
+              "Multiply both sides by 3/2: x = 8 × 3/2.",
+              "8 × 3/2 = 24/2 = 12.",
+              "Check: (2/3) × 12 = 8."
+            ],
+            "answer": "x = 12"
+          },
+          "common_mistakes": [
+            "Multiplying by 2/3 again instead of its reciprocal.",
+            "Dividing the right side by 2 and forgetting to multiply by 3."
+          ],
+          "check_questions": [
+            "Why does multiplying by the reciprocal leave just x?",
+            "How would you solve x − 2.5 = 4, and which inverse operation did you use?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "eq-two-step",
+      "title": "Two-step equations",
+      "summary": "Undo addition or subtraction first, then multiplication or division.",
+      "prerequisites": ["eq-one-step"],
+      "objectives": [
+        {"id": "eq.two-step", "statement": "Solve equations of the form ax + b = c in two steps."},
+        {"id": "eq.negative-coeff", "statement": "Solve two-step equations where the coefficient or numbers are negative."}
+      ],
+      "estimated_minutes": 20,
+      "content": {
+        "intro": {
+          "explanation": "In 2x + 1 = 9 two things happen to x: it is multiplied by 2, then 1 is added. To undo them, work backwards, like taking off shoes and socks in reverse order. First undo the adding, then undo the multiplying.",
+          "key_points": [
+            "Two operations means two undo steps.",
+            "Undo in reverse order: add/subtract first, then multiply/divide.",
+            "Do each step to both sides.",
+            "Check at the end."
+          ],
+          "worked_example": {
+            "problem": "Solve 2x + 1 = 9",
+            "steps": [
+              "Undo the + 1: subtract 1 from both sides to get 2x = 8.",
+              "Undo the × 2: divide both sides by 2 to get x = 4.",
+              "Check: 2 × 4 + 1 = 9."
+            ],
+            "answer": "x = 4"
+          },
+          "common_mistakes": [
+            "Dividing by 2 first and forgetting to divide the 1 as well.",
+            "Not doing the same step on both sides."
+          ],
+          "check_questions": [
+            "In 3x + 2 = 11, what is the first thing you would undo?",
+            "Why do we undo the adding before the multiplying?"
+          ]
+        },
+        "working": {
+          "explanation": "The standard method: first add or subtract to get the x term alone, then divide by the coefficient (the number multiplying x). With a subtraction like 3x − 5 = 16, undo it by adding 5 to both sides. Keep the signs attached to the numbers, and check by substituting.",
+          "key_points": [
+            "Step 1: isolate the x term with + or −.",
+            "Step 2: divide by the coefficient.",
+            "Undo − 5 by adding 5.",
+            "Substitute to check."
+          ],
+          "worked_example": {
+            "problem": "Solve 3x − 5 = 16",
+            "steps": [
+              "Add 5 to both sides: 3x = 21.",
+              "Divide both sides by 3: x = 7.",
+              "Check: 3 × 7 − 5 = 21 − 5 = 16."
+            ],
+            "answer": "x = 7"
+          },
+          "common_mistakes": [
+            "Subtracting 5 instead of adding it.",
+            "Dividing only the 21 by 3 and leaving the 3x untouched."
+          ],
+          "check_questions": [
+            "How would you solve 5x + 4 = 29, step by step?",
+            "How do you know whether to add or subtract in the first step?"
+          ]
+        },
+        "deep": {
+          "explanation": "Negative coefficients work the same way, but the signs need care. In 7 − 4x = 19 the x term is −4x, so after subtracting 7 you have −4x = 12, and you divide by −4. A positive divided by a negative is negative. An alternative is to think of the whole left side as 7 + (−4)x. Always check the sign of your answer by substituting.",
+          "key_points": [
+            "A coefficient includes its sign: in 7 − 4x it is −4.",
+            "Divide by the coefficient, signs included.",
+            "Positive ÷ negative = negative; negative ÷ negative = positive.",
+            "Substituting catches sign slips."
+          ],
+          "worked_example": {
+            "problem": "Solve 7 − 4x = 19",
+            "steps": [
+              "Subtract 7 from both sides: −4x = 12.",
+              "Divide both sides by −4: x = 12 ÷ (−4) = −3.",
+              "Check: 7 − 4 × (−3) = 7 + 12 = 19."
+            ],
+            "answer": "x = −3"
+          },
+          "common_mistakes": [
+            "Dropping the minus sign and dividing by 4.",
+            "Writing x = 3 and not checking the sign."
+          ],
+          "check_questions": [
+            "What is the coefficient of x in 10 − 3x = 1, and why?",
+            "Can an equation have a negative answer even when all its numbers look positive?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "eq-both-sides",
+      "title": "Variables on both sides",
+      "summary": "Collect the x terms on one side, solve, and check the solution.",
+      "prerequisites": ["eq-two-step"],
+      "objectives": [
+        {"id": "eq.variables-both-sides", "statement": "Solve equations with x on both sides by collecting x terms on one side."},
+        {"id": "eq.check-solution", "statement": "Check a solution by substituting it into both sides of the original equation."}
+      ],
+      "estimated_minutes": 25,
+      "content": {
+        "intro": {
+          "explanation": "Sometimes x is on both sides of the scale, as in 3x = x + 6. Remove the smaller amount of x from both sides so that x appears on one side only. Then it is a normal equation. Finally, put your answer back into both sides to see that the scale balances.",
+          "key_points": [
+            "Move the x terms to one side by subtracting from both sides.",
+            "Then solve the one- or two-step equation that is left.",
+            "Substitute your answer into both sides to check.",
+            "Both sides must give the same number."
+          ],
+          "worked_example": {
+            "problem": "Solve 3x = x + 6",
+            "steps": [
+              "Subtract x from both sides: 2x = 6.",
+              "Divide both sides by 2: x = 3.",
+              "Check: left 3 × 3 = 9, right 3 + 6 = 9."
+            ],
+            "answer": "x = 3"
+          },
+          "common_mistakes": [
+            "Subtracting x from one side only.",
+            "Checking in only one side."
+          ],
+          "check_questions": [
+            "In 5x = 2x + 9, which x term would you remove first?",
+            "Why is substituting into both sides a good safety net?"
+          ]
+        },
+        "working": {
+          "explanation": "Plan: (1) subtract the smaller x term from both sides, (2) move the plain numbers to the other side, (3) divide by the coefficient, (4) check in the original equation. Choosing to remove the smaller x term avoids negative coefficients, but either choice gives the same answer.",
+          "key_points": [
+            "Collect x terms on one side first.",
+            "Collect numbers on the other side.",
+            "Divide by the remaining coefficient.",
+            "Check by substituting into the original equation."
+          ],
+          "worked_example": {
+            "problem": "Solve 5x + 3 = 2x + 15",
+            "steps": [
+              "Subtract 2x from both sides: 3x + 3 = 15.",
+              "Subtract 3 from both sides: 3x = 12.",
+              "Divide both sides by 3: x = 4.",
+              "Check: left 5 × 4 + 3 = 23, right 2 × 4 + 15 = 23."
+            ],
+            "answer": "x = 4"
+          },
+          "common_mistakes": [
+            "Subtracting 2x from one side and adding it to the other.",
+            "Forgetting to check in the original equation."
+          ],
+          "check_questions": [
+            "Could you solve 5x + 3 = 2x + 15 by removing 5x instead? What would be different?",
+            "What number would you subtract first in 4x + 7 = x + 19?"
+          ]
+        },
+        "deep": {
+          "explanation": "When brackets appear, expand them first: 4(x − 1) = 4x − 4. Collect terms afterwards. Some equations behave unusually: if all x terms vanish and the leftover is false (like 3 = 5), there is no solution; if it is always true (like 4 = 4), every number is a solution. Checking by substitution is essential because it exposes slips in expansion.",
+          "key_points": [
+            "Expand brackets first: multiply every term inside.",
+            "No x left and a false statement: no solution.",
+            "No x left and a true statement: infinitely many solutions.",
+            "Substitution checks catch expansion errors."
+          ],
+          "worked_example": {
+            "problem": "Solve 4(x − 1) = 2x + 6",
+            "steps": [
+              "Expand: 4x − 4 = 2x + 6.",
+              "Subtract 2x from both sides: 2x − 4 = 6.",
+              "Add 4 to both sides: 2x = 10.",
+              "Divide both sides by 2: x = 5.",
+              "Check: left 4 × (5 − 1) = 16, right 2 × 5 + 6 = 16."
+            ],
+            "answer": "x = 5"
+          },
+          "common_mistakes": [
+            "Multiplying only the x inside the bracket: 4(x − 1) is not 4x − 1.",
+            "Treating 3x + 2 = 3x + 5 as solvable instead of seeing it has no solution."
+          ],
+          "check_questions": [
+            "What happens if you try to solve x + 1 = x + 2, and what does that mean?",
+            "Why is it risky to skip the check when an equation has brackets?"
+          ]
+        }
+      }
+    }
+  ]
+}

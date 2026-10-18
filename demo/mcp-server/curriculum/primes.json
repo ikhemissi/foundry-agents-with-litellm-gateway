@@ -1,0 +1,290 @@
+{
+  "id": "primes",
+  "title": "Prime numbers",
+  "summary": "Spot primes, break numbers into prime factors, and use them to find GCF and LCM.",
+  "prerequisites": [],
+  "sections": [
+    {
+      "id": "primes-basics",
+      "title": "Primes and divisibility",
+      "summary": "What makes a number prime, and quick rules to test divisibility.",
+      "prerequisites": [],
+      "objectives": [
+        {"id": "prime.identify", "statement": "Decide whether a whole number is prime, composite, or neither."},
+        {"id": "prime.divisibility", "statement": "Use divisibility rules for 2, 3, 5, 9 and 10 to test numbers quickly."}
+      ],
+      "estimated_minutes": 15,
+      "content": {
+        "intro": {
+          "explanation": "A prime number has exactly two factors: 1 and itself. 7 is prime because only 1 × 7 makes 7. A number with more factors, like 6 (1, 2, 3, 6), is composite. The number 1 has only one factor, so it is neither prime nor composite. The smallest prime is 2, and it is the only even prime.",
+          "key_points": [
+            "Prime: exactly two factors, 1 and itself.",
+            "Composite: more than two factors.",
+            "1 is neither prime nor composite.",
+            "2 is the only even prime."
+          ],
+          "worked_example": {
+            "problem": "Is 7 prime?",
+            "steps": [
+              "Try to divide 7 by 2, 3, 4, 5 and 6.",
+              "None of them divides 7 exactly.",
+              "So the only factors of 7 are 1 and 7.",
+              "7 is prime."
+            ],
+            "answer": "7 is prime"
+          },
+          "common_mistakes": [
+            "Thinking 1 is prime.",
+            "Thinking all odd numbers are prime (9 = 3 × 3)."
+          ],
+          "check_questions": [
+            "Can you name the first five prime numbers and say how you know?",
+            "Why is 9 not prime even though it is odd?"
+          ]
+        },
+        "working": {
+          "explanation": "To test a number, look for a small factor using divisibility rules. Divisible by 2 if it ends in 0, 2, 4, 6 or 8. By 5 if it ends in 0 or 5. By 10 if it ends in 0. By 3 if its digits add up to a multiple of 3. By 9 if its digits add up to a multiple of 9. If you find any factor other than 1 and the number, it is composite.",
+          "key_points": [
+            "By 2: last digit is even.",
+            "By 5: last digit is 0 or 5. By 10: last digit is 0.",
+            "By 3: digit sum is a multiple of 3. By 9: digit sum is a multiple of 9.",
+            "One extra factor is enough to prove a number composite."
+          ],
+          "worked_example": {
+            "problem": "Is 91 prime?",
+            "steps": [
+              "91 is odd, so 2 does not divide it. It does not end in 0 or 5.",
+              "Digit sum is 9 + 1 = 10, not a multiple of 3.",
+              "Try 7: 7 × 13 = 91.",
+              "91 has the factor 7, so it is composite."
+            ],
+            "answer": "91 is not prime (7 × 13)"
+          },
+          "common_mistakes": [
+            "Stopping after the 2, 3 and 5 tests (91 passes them but is not prime).",
+            "Mixing up the rules for 3 and 9."
+          ],
+          "check_questions": [
+            "How can you tell quickly that 4,215 is divisible by 5 and by 3?",
+            "What would you try first to show that 51 is not prime?"
+          ]
+        },
+        "deep": {
+          "explanation": "You only need to test primes up to the square root of the number. If n had a factor larger than its square root, it would be paired with a smaller one that you would already have found. So to test 223, check primes up to 14 (since 15 × 15 = 225 is already above 223). If none divides it, the number is prime. There are infinitely many primes.",
+          "key_points": [
+            "Test only primes up to √n.",
+            "Factors come in pairs, one at most √n and one at least √n.",
+            "No factor found up to √n means the number is prime.",
+            "There are infinitely many primes."
+          ],
+          "worked_example": {
+            "problem": "Is 223 prime?",
+            "steps": [
+              "14 × 14 = 196 and 15 × 15 = 225, so test primes up to 13: 2, 3, 5, 7, 11, 13.",
+              "2: 223 is odd. 5: it ends in 3. 3: digit sum is 7, no.",
+              "7: 7 × 31 = 217, remainder 6. 11: 11 × 20 = 220, remainder 3. 13: 13 × 17 = 221, remainder 2.",
+              "No prime up to 13 divides 223, so 223 is prime."
+            ],
+            "answer": "223 is prime"
+          },
+          "common_mistakes": [
+            "Testing every number below n instead of primes up to √n.",
+            "Stopping the search too early, below √n."
+          ],
+          "check_questions": [
+            "Why is it enough to stop at the square root?",
+            "Which primes would you need to test to decide whether 150 is prime? Would you need them all?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "primes-factorization",
+      "title": "Factor trees and prime factorization",
+      "summary": "Break any number into a product of primes using a factor tree.",
+      "prerequisites": ["primes-basics"],
+      "objectives": [
+        {"id": "prime.factor-tree", "statement": "Build a factor tree by splitting numbers into factor pairs until only primes remain."},
+        {"id": "prime.prime-factorization", "statement": "Write a number as a product of primes using exponents."}
+      ],
+      "estimated_minutes": 20,
+      "content": {
+        "intro": {
+          "explanation": "Every whole number above 1 can be built by multiplying primes, like Lego bricks. To find them, split the number into two factors, then split those, and keep going until every branch ends in a prime. This picture is called a factor tree. For 12: 12 = 3 × 4, and 4 = 2 × 2, giving the primes 2, 2 and 3.",
+          "key_points": [
+            "Split a number into any two factors, then keep splitting.",
+            "Stop a branch when you reach a prime.",
+            "The primes at the ends are the prime factors.",
+            "Multiply them back to check."
+          ],
+          "worked_example": {
+            "problem": "Write 12 as a product of primes",
+            "steps": [
+              "12 = 3 × 4. 3 is prime, so stop that branch.",
+              "4 = 2 × 2. Both are prime.",
+              "The prime factors are 2, 2 and 3.",
+              "Check: 2 × 2 × 3 = 12."
+            ],
+            "answer": "2 × 2 × 3"
+          },
+          "common_mistakes": [
+            "Stopping at a composite factor such as 4.",
+            "Forgetting a repeated prime."
+          ],
+          "check_questions": [
+            "If you start 12 as 2 × 6 instead of 3 × 4, what do you end up with?",
+            "How can you check a prime factorization is right?"
+          ]
+        },
+        "working": {
+          "explanation": "Write repeated primes with exponents and list them smallest first: 2 × 2 × 3 × 5 becomes 2² × 3 × 5. A fast method is to divide repeatedly by the smallest prime that fits (2, then 3, then 5, ...) until you reach 1. Whatever tree you draw, you always get the same primes.",
+          "key_points": [
+            "An exponent counts how many times a prime repeats: 2² = 2 × 2.",
+            "List primes from smallest to largest.",
+            "Or divide repeatedly by the smallest prime factor.",
+            "The result is the same whichever tree you draw."
+          ],
+          "worked_example": {
+            "problem": "Find the prime factorization of 60",
+            "steps": [
+              "60 = 6 × 10.",
+              "6 = 2 × 3 and 10 = 2 × 5.",
+              "The primes are 2, 2, 3, 5.",
+              "With exponents: 2² × 3 × 5. Check: 4 × 3 × 5 = 60."
+            ],
+            "answer": "2² × 3 × 5"
+          },
+          "common_mistakes": [
+            "Treating 2² as 4 and forgetting it stands for the prime 2 used twice.",
+            "Forgetting that a prime written without an exponent appears once."
+          ],
+          "check_questions": [
+            "What does the little 2 in 2² tell you?",
+            "Can you build a factor tree for 36 and tell me the prime factorization?"
+          ]
+        },
+        "deep": {
+          "explanation": "Every whole number above 1 has exactly one prime factorization, apart from the order of the factors (the Fundamental Theorem of Arithmetic). This makes factorization a fingerprint of a number. It also counts factors: add 1 to each exponent and multiply. For 2³ × 3² × 5¹ that gives (3+1)(2+1)(1+1) = 24 factors.",
+          "key_points": [
+            "Each number above 1 has one unique prime factorization.",
+            "Divide by the smallest prime repeatedly, or use any tree.",
+            "Number of factors = product of (exponent + 1).",
+            "A square number has all even exponents."
+          ],
+          "worked_example": {
+            "problem": "Factor 360 and count how many factors it has",
+            "steps": [
+              "360 ÷ 2 = 180, ÷ 2 = 90, ÷ 2 = 45. That is three 2s.",
+              "45 ÷ 3 = 15, ÷ 3 = 5. That is two 3s, and 5 is prime.",
+              "360 = 2³ × 3² × 5. Check: 8 × 9 × 5 = 360.",
+              "Number of factors: (3+1) × (2+1) × (1+1) = 24."
+            ],
+            "answer": "2³ × 3² × 5, so 24 factors"
+          },
+          "common_mistakes": [
+            "Using exponent instead of exponent + 1 when counting factors.",
+            "Believing two different trees can give different primes."
+          ],
+          "check_questions": [
+            "Why must a square number have only even exponents?",
+            "How would the factorization help you decide whether 360 is divisible by 8?"
+          ]
+        }
+      }
+    },
+    {
+      "id": "primes-gcd-lcm",
+      "title": "Greatest common factor and least common multiple",
+      "summary": "Use factors and primes to find the GCF and the LCM of two numbers.",
+      "prerequisites": ["primes-factorization"],
+      "objectives": [
+        {"id": "prime.gcd", "statement": "Find the greatest common factor (GCF) of two numbers."},
+        {"id": "prime.lcm", "statement": "Find the least common multiple (LCM) of two numbers."}
+      ],
+      "estimated_minutes": 20,
+      "content": {
+        "intro": {
+          "explanation": "The greatest common factor (GCF, also called GCD) is the biggest number that divides two numbers exactly. To find it for small numbers, list the factors of each and pick the biggest one they share. It is the tool for simplifying fractions.",
+          "key_points": [
+            "A common factor divides both numbers.",
+            "The GCF is the largest common factor.",
+            "List the factors of each number and compare.",
+            "1 is always a common factor."
+          ],
+          "worked_example": {
+            "problem": "Find the GCF of 6 and 9",
+            "steps": [
+              "Factors of 6: 1, 2, 3, 6.",
+              "Factors of 9: 1, 3, 9.",
+              "Common factors: 1 and 3.",
+              "The greatest is 3."
+            ],
+            "answer": "3"
+          },
+          "common_mistakes": [
+            "Picking a common factor that is not the biggest.",
+            "Confusing the GCF with a multiple."
+          ],
+          "check_questions": [
+            "What is the GCF of 8 and 12, and how did you find it?",
+            "If two numbers share only the factor 1, what does that tell you about them?"
+          ]
+        },
+        "working": {
+          "explanation": "With prime factorizations, the GCF takes the lowest power of each shared prime, and the least common multiple (LCM, the smallest number both divide into) takes the highest power of every prime that appears. LCM is what you need for a common denominator, or for events that repeat on different cycles.",
+          "key_points": [
+            "GCF: shared primes, lowest exponent.",
+            "LCM: all primes that appear, highest exponent.",
+            "GCF is at most the smaller number; LCM is at least the larger.",
+            "Use LCM for 'when will they happen together again?' problems."
+          ],
+          "worked_example": {
+            "problem": "Find the GCF and LCM of 12 and 18",
+            "steps": [
+              "12 = 2² × 3 and 18 = 2 × 3².",
+              "GCF: lowest powers of the shared primes: 2 × 3 = 6.",
+              "LCM: highest powers: 2² × 3² = 36.",
+              "Check: 36 ÷ 12 = 3 and 36 ÷ 18 = 2."
+            ],
+            "answer": "GCF 6, LCM 36"
+          },
+          "common_mistakes": [
+            "Mixing up lowest powers (GCF) and highest powers (LCM).",
+            "Including a prime that is not shared when finding the GCF."
+          ],
+          "check_questions": [
+            "Two buses leave at the same time, one every 12 minutes and one every 18. When do they leave together again, and which tool did you use?",
+            "How would you use the GCF to simplify 12/18?"
+          ]
+        },
+        "deep": {
+          "explanation": "For two numbers a and b, GCF × LCM = a × b. This gives a shortcut: once you know the GCF, LCM = a × b ÷ GCF. For larger numbers, the Euclidean algorithm finds the GCF without factoring: repeatedly replace the bigger number by the remainder when dividing, until the remainder is 0. If the GCF is 1, the numbers are called coprime.",
+          "key_points": [
+            "GCF × LCM = a × b for two numbers.",
+            "Euclid: GCF(a, b) = GCF(b, a mod b); stop when the remainder is 0.",
+            "Numbers with GCF 1 are coprime, even if neither is prime.",
+            "Prime factorization works well; Euclid scales better."
+          ],
+          "worked_example": {
+            "problem": "Find the GCF and LCM of 48 and 180",
+            "steps": [
+              "48 = 2⁴ × 3 and 180 = 2² × 3² × 5.",
+              "GCF: 2² × 3 = 12.",
+              "LCM: 2⁴ × 3² × 5 = 16 × 9 × 5 = 720.",
+              "Check: 12 × 720 = 8640 = 48 × 180."
+            ],
+            "answer": "GCF 12, LCM 720"
+          },
+          "common_mistakes": [
+            "Believing coprime numbers must be prime (8 and 9 are coprime).",
+            "Multiplying the two numbers and calling it the LCM, even when they share factors."
+          ],
+          "check_questions": [
+            "Why does GCF × LCM = a × b make sense in terms of prime exponents?",
+            "Can you use the Euclidean method on 48 and 180 and see whether you also get 12?"
+          ]
+        }
+      }
+    }
+  ]
+}

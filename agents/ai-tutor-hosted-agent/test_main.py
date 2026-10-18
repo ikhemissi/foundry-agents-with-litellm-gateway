@@ -81,7 +81,7 @@ class AgentTests(unittest.TestCase):
             enable_sensitive_data=False, enable_message_events=False
         )
         server.assert_called_once_with(
-            agent.return_value, client.return_value, "api_key"
+            agent.return_value, client.return_value, "api_key", None
         )
         server.return_value.run.assert_called_once()
 
