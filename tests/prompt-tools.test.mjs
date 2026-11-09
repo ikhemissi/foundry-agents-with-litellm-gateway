@@ -20,7 +20,7 @@ const env = {
   CONSUMER_FOUNDRY_NAME: 'acct',
   CONSUMER_FOUNDRY_PROJECT_ENDPOINT: PROJECT,
   LITELLM_ENDPOINT: GATEWAY,
-  ENTRA_GATEWAY_CLIENT_ID: 'c00eeca7-9675-4e1b-96b1-6f499b811527',
+  ENTRA_GATEWAY_CLIENT_ID: '00000000-0000-4000-8000-000000000002',
   ENTRA_APP_PRINCIPALS: JSON.stringify([{ oid: IDENTITY.principal_id, azp: IDENTITY.client_id }]),
   ENTRA_CAPABILITIES: JSON.stringify({ [IDENTITY.principal_id]: { mcp: { curriculum: TOOLS }, agents: [A2A_AGENT] } }),
 };
@@ -119,7 +119,7 @@ test('creates connections and a toolbox, then attaches the toolbox MCP tool and 
   assert.equal(puts[NAMES.a2aConnection].target, `${GATEWAY}/a2a/quiz_master/`, 'the trailing slash is required');
   for (const name of [NAMES.mcpConnection, NAMES.a2aConnection]) {
     assert.equal(puts[name].authType, 'AgenticIdentityToken');
-    assert.equal(puts[name].audience, 'api://c00eeca7-9675-4e1b-96b1-6f499b811527');
+    assert.equal(puts[name].audience, 'api://00000000-0000-4000-8000-000000000002');
   }
   assert.equal(puts[NAMES.toolboxConnection].authType, 'UserEntraToken');
   assert.equal(puts[NAMES.toolboxConnection].audience, 'https://ai.azure.com');
@@ -157,7 +157,7 @@ test('leaves matching connections and toolbox alone and promotes a changed toolb
         [NAMES.a2aConnection]: `${GATEWAY}/a2a/quiz_master/`,
         [NAMES.toolboxConnection]: `${PROJECT}/toolboxes/tutor-tools/mcp?api-version=v1`,
       }[name],
-      audience: name === NAMES.toolboxConnection ? 'https://ai.azure.com' : 'api://c00eeca7-9675-4e1b-96b1-6f499b811527',
+      audience: name === NAMES.toolboxConnection ? 'https://ai.azure.com' : 'api://00000000-0000-4000-8000-000000000002',
     },
   });
   const routes = {
@@ -217,8 +217,8 @@ test('definition comparison tolerates service defaults but notices tool changes'
 test('preflight validates PROMPT_TOOLS', () => {
   const base = {
     GATEWAY_AUTH_MODE: 'entra', HOSTED_AUTH_MODE: 'entra', PROMPT_AUTH_MODE: 'oauth2',
-    ENTRA_TENANT_ID: '5d35dd6f-6bd8-469c-8ca3-5972194e432d',
-    ENTRA_GATEWAY_CLIENT_ID: 'c00eeca7-9675-4e1b-96b1-6f499b811527',
+    ENTRA_TENANT_ID: '00000000-0000-4000-8000-000000000001',
+    ENTRA_GATEWAY_CLIENT_ID: '00000000-0000-4000-8000-000000000002',
   };
   assert.throws(() => validateAuthConfig({ ...base, PROMPT_TOOLS: 'yes' }), /PROMPT_TOOLS must be exactly/);
   assert.throws(() => validateAuthConfig({ ...base, PROMPT_TOOLS: 'enabled' }), /requires ENABLE_DEMO_BACKENDS=true/);
